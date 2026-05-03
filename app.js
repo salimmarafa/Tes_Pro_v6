@@ -1034,3 +1034,222 @@ function _fbErr(code) {
   };
   return m[code] || 'Something went wrong. Please try again.';
 }
+
+/* ═══════════════════════════════════════════════════════════
+   SESSION 3 — PRICE ALERTS + ECONOMIC CALENDAR
+   ═══════════════════════════════════════════════════════════ */
+
+const BACKEND = 'https://tes-pro-backend.onrender.com';
+const ALERT_PAIRS = ['XAU/USD','GBP/USD','EUR/USD','USD/JPY','GBP/JPY','AUD/USD','USD/CAD','NZD/USD','USD/CHF','EUR/JPY'];
+
+// ── Alert storage ─────────────────────────────
+function _alertsKey() { return S.user ? 'tes_alerts_' + S.user.uid : null; }
+function _loadAlerts() {
+  try { return JSON.parse(localStorage.getItem(_alertsKey()) || '[]'); }
+  catch { return []; }
+}
+function _saveAlerts(arr) {
+  const k = _alertsKey(); if (k) localStorage.setItem(k, JSON.stringify(arr));
+}
+
+// ── Add alert ─────────────────────────────────
+function addPriceAlert() {
+  const pair  = document.getElementById('al-pair')?.value;
+  const dir   = document.getElementById('al-dir')?.value;
+  const price = parseFloat(document.getElementById('al-price')?.value);
+  if (!pair || !dir || !price || isNaN(price)) {
+    _toast('Fill in all alert fields.', 'warning'); return;
+  }
+  const alerts = _loadAlerts();
+  if (alerts.length >= 10) { _toast('Max 10 alerts allowed.', 'warning'); return; }
+  alerts.push({ id: Date.now(), pair, dir, price, triggered: false });
+  _saveAlerts(alerts);
+  document.getElementById('al-price').value = '';
+  _toast('Alert set for ' + pair + ' ' + (dir === 'above' ? '↑' : '↓') + ' ' + price, 'success');
+  _renderAlertsList();
+}
+
+// ── Delete alert ──────────────────────────────
+function deleteAlert(id) {
+  _saveAlerts(_loadAlerts().filter(a => a.id !== id));
+  _renderAlertsList();
+}
+
+// ── Render alerts list ────────────────────────
+function _renderAlertsList() {
+  const el = document.getElementById('alerts-list');
+  if (!el) return;
+  const alerts = _loadAlerts();
+  if (!alerts.length) {
+    el.innerHTML = '<p style="color:var(--t3);font-size:13px;padding:8px 0">No alerts set. Add one above.</p>';
+    return;
+  }
+  el.innerHTML = alerts.map(a => {
+    const col  = a.triggered ? 'var(--gold)' : a.dir === 'above' ? 'var(--green)' : 'var(--red)';
+    const icon = a.triggered ? '🔔' : a.dir === 'above' ? '↑' : '↓';
+    return `<div class="alert-item${a.triggered ? ' triggered' : ''}">
+      <div>
+        <div class="alert-pair">${a.pair} <span style="font-size:13px;color:${col}">${icon} ${a.price}</span></div>
+        <div class="alert-meta">${a.dir === 'above' ? 'Notify when price goes above' : 'Notify when price goes below'} ${a.price}${a.triggered ? ' · ✅ Triggered' : ''}</div>
+      </div>
+      <button class="alert-del" onclick="deleteAlert(${a.id})" title="Remove alert">×</button>
+    </div>`;
+  }).join('');
+}
+
+// ── Fetch live prices ─────────────────────────
+async function fetchLivePrices() {
+  const el = document.getElementById('live-prices-list');
+  if (!el) return;
+  try {
+    const res  = await fetch(BACKEND + '/price');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    _renderLivePrices(data);
+    _checkAlertTriggers(data);
+  } catch (err) {
+    console.warn('[TES] Price fetch failed:', err.message);
+    if (el) el.innerHTML = '<p style="color:var(--t3);font-size:13px">Could not load prices. Check connection.</p>';
+  }
+}
+
+// ── Render live prices ────────────────────────
+function _renderLivePrices(data) {
+  const el = document.getElementById('live-prices-list');
+  if (!el || !data) return;
+  const pairs = Object.keys(data);
+  if (!pairs.length) { el.innerHTML = '<p style="color:var(--t3);font-size:13px">No price data.</p>'; return; }
+  el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">` +
+    pairs.map(p => {
+      const d   = data[p];
+      const chg = parseFloat(d.percent_change || 0);
+      const col = chg > 0 ? 'var(--green)' : chg < 0 ? 'var(--red)' : 'var(--t2)';
+      const arr = chg > 0 ? '↑' : chg < 0 ? '↓' : '→';
+      return `<div style="background:var(--bg1);border:1px solid var(--bd);border-radius:10px;padding:10px 12px">
+        <div style="font-size:11px;font-weight:700;color:var(--t2);margin-bottom:4px">${p.replace('/','')} </div>
+        <div class="price-live">${parseFloat(d.price).toFixed(p.includes('JPY') ? 3 : 5)}</div>
+        <div style="font-size:10px;color:${col};margin-top:3px;font-weight:700">${arr} ${Math.abs(chg).toFixed(2)}%</div>
+      </div>`;
+    }).join('') + `</div>`;
+}
+
+// ── Check if any alert triggered ──────────────
+function _checkAlertTriggers(priceData) {
+  const alerts  = _loadAlerts();
+  let   changed = false;
+  alerts.forEach(a => {
+    if (a.triggered) return;
+    const key   = a.pair;
+    const live  = parseFloat(priceData[key]?.price);
+    if (!live) return;
+    const hit = (a.dir === 'above' && live >= a.price) ||
+                (a.dir === 'below' && live <= a.price);
+    if (hit) {
+      a.triggered = true;
+      changed     = true;
+      _triggerAlertPopup(a, live);
+    }
+  });
+  if (changed) { _saveAlerts(alerts); _renderAlertsList(); }
+}
+
+// ── Alert popup ───────────────────────────────
+function _triggerAlertPopup(alert, livePrice) {
+  _toast('🔔 ' + alert.pair + ' hit ' + livePrice + '!', 'success');
+  // Also show breaking-alert overlay
+  const el = document.getElementById('breaking-alert');
+  if (el) {
+    el.textContent = '🔔 ALERT: ' + alert.pair + ' ' + (alert.dir === 'above' ? '↑' : '↓') + ' ' + alert.price + ' — Live: ' + livePrice;
+    el.style.display = 'block';
+    clearTimeout(el._dismiss);
+    el._dismiss = setTimeout(() => { el.style.display = 'none'; }, 8000);
+  }
+  // Play audio ping
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const g   = ctx.createGain();
+    osc.connect(g); g.connect(ctx.destination);
+    osc.frequency.value = 880;
+    osc.type = 'sine';
+    g.gain.setValueAtTime(0.3, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.8);
+  } catch {}
+}
+
+// ── Economic Calendar ─────────────────────────
+let _calFilter = 'all';
+let _calData   = [];
+
+function setCalFilter(val, btn) {
+  _calFilter = val;
+  document.querySelectorAll('[id^="cal-filter-"]').forEach(b => {
+    b.style.background = ''; b.style.color = '';
+    b.className = 'btn btn-ghost btn-sm';
+  });
+  btn.style.background = 'var(--gold)';
+  btn.style.color = '#000';
+  btn.className = 'btn btn-sm';
+  _renderCalendar();
+}
+
+async function loadCalendar() {
+  const el = document.getElementById('calendar-list');
+  if (!el) return;
+  el.innerHTML = '<p style="color:var(--t3);font-size:13px">Loading…</p>';
+  try {
+    const res  = await fetch(BACKEND + '/calendar');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    _calData = await res.json();
+    _renderCalendar();
+  } catch (err) {
+    console.warn('[TES] Calendar fetch failed:', err.message);
+    el.innerHTML = '<p style="color:var(--t3);font-size:13px">Could not load calendar. Check connection.</p>';
+  }
+}
+
+function _renderCalendar() {
+  const el = document.getElementById('calendar-list');
+  if (!el) return;
+  const filtered = _calFilter === 'all' ? _calData : _calData.filter(e => e.impact === _calFilter);
+  if (!filtered.length) {
+    el.innerHTML = '<p style="color:var(--t3);font-size:13px">No events found.</p>'; return;
+  }
+  const impactIcon  = { high: '🔴', medium: '🟡', low: '⚪' };
+  const impactColor = { high: 'var(--red)', medium: 'var(--gold)', low: 'var(--t3)' };
+  el.innerHTML = filtered.map(ev => {
+    const timeStr = ev.datetime
+      ? new Date(ev.datetime).toLocaleString('en-GB', { weekday:'short', day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', timeZone:'Africa/Lagos' })
+      : '—';
+    const impact = (ev.impact || 'low').toLowerCase();
+    return `<div class="cal-item">
+      <div class="cal-impact ${impact}">${impactIcon[impact] || '⚪'}</div>
+      <div style="flex:1">
+        <div class="cal-name">${_escHtml(ev.event || '—')}</div>
+        <div class="cal-meta">
+          <span style="font-weight:700;color:${impactColor[impact] || 'var(--t2)'}">${ev.currency || ''}</span>
+          <span>🕐 ${timeStr}</span>
+          <span class="impact-badge ${impact}">${(impact).toUpperCase()}</span>
+        </div>
+        ${ev.forecast || ev.previous ? `<div class="cal-forecast">
+          ${ev.forecast ? 'Forecast: <strong style="color:var(--t1)">' + ev.forecast + '</strong>' : ''}
+          ${ev.previous ? ' &nbsp;·&nbsp; Previous: ' + ev.previous : ''}
+        </div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Init alerts page ──────────────────────────
+let _priceInterval = null;
+
+function _initAlertsPage() {
+  _renderAlertsList();
+  fetchLivePrices();
+  loadCalendar();
+  // Poll prices every 60 seconds while page is active
+  clearInterval(_priceInterval);
+  _priceInterval = setInterval(fetchLivePrices, 60000);
+}
