@@ -489,30 +489,6 @@
   .rc-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
   #rc-result{padding:14px;background:var(--bg1);border:1px solid var(--bd2);border-radius:10px;margin-top:12px;font-size:13px;color:var(--t2);min-height:54px}
 
-  /* ══════════════════════════════════════════════
-     SESSION 3 — PRICE ALERTS + ECONOMIC CALENDAR
-  ══════════════════════════════════════════════ */
-  .alert-item{background:var(--bg2);border:1px solid var(--bd);border-radius:12px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:12px}
-  .alert-item.triggered{border-color:var(--gold);background:var(--gold-dim)}
-  .alert-pair{font-size:16px;font-weight:900;color:var(--t1);letter-spacing:-.3px}
-  .alert-meta{font-size:11px;color:var(--t2);margin-top:3px}
-  .alert-del{background:transparent;border:none;cursor:pointer;color:var(--t3);font-size:18px;padding:4px;line-height:1}
-  .alert-del:hover{color:var(--red)}
-  .cal-item{padding:12px 0;border-bottom:1px solid var(--bd);display:flex;align-items:flex-start;gap:12px}
-  .cal-item:last-child{border-bottom:none}
-  .cal-impact{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;margin-top:2px}
-  .cal-impact.high{background:rgba(255,69,96,.15)}
-  .cal-impact.medium{background:rgba(228,174,42,.15)}
-  .cal-impact.low{background:rgba(255,255,255,.06)}
-  .cal-name{font-size:13px;font-weight:700;color:var(--t1);margin-bottom:3px}
-  .cal-meta{font-size:11px;color:var(--t2);display:flex;gap:10px;flex-wrap:wrap}
-  .cal-forecast{font-size:11px;color:var(--t3);margin-top:4px}
-  .impact-badge{font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;letter-spacing:.5px}
-  .impact-badge.high{background:rgba(255,69,96,.15);color:var(--red);border:1px solid rgba(255,69,96,.3)}
-  .impact-badge.medium{background:rgba(228,174,42,.15);color:var(--gold);border:1px solid rgba(228,174,42,.3)}
-  .impact-badge.low{background:rgba(255,255,255,.06);color:var(--t2);border:1px solid var(--bd)}
-  .price-live{font-family:monospace;font-size:13px;color:var(--green);font-weight:700}
-  
   /* ── BUTTONS ── */
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:11px 20px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;font-family:inherit;color:var(--t1)}
   .btn-gold{background:var(--gold);color:#000 !important}
@@ -692,6 +668,11 @@
         </div>
       </div>
 
+      <!-- [SESSION 3 - SESSION TIMER] -->
+      <div class="card" id="session-timer-card" style="margin-bottom:16px;padding:16px">
+        <p style="color:var(--t3);font-size:13px">Loading session times…</p>
+      </div>
+
       <!-- Quick Access -->
       <div class="sec-lbl">Quick Access</div>
       <div class="quick-grid">
@@ -710,10 +691,6 @@
         <button class="quick-btn" onclick="goPage('analytics')">
           <div class="quick-icon purple">🎯</div>
           <div><div class="quick-label">Analytics</div><div class="quick-sub">Performance</div></div>
-        </button>
-        <button class="quick-btn" onclick="goPage('alerts')">
-          <div class="quick-icon" style="background:rgba(255,69,96,.18)">🔔</div>
-          <div><div class="quick-label">Alerts</div><div class="quick-sub">Prices & Calendar</div></div>
         </button>
       </div>
 
@@ -856,6 +833,12 @@
         <div class="card-title">Session Breakdown</div>
         <div id="session-stats" style="font-size:13px;color:var(--t2)">Log trades with sessions selected to see breakdown.</div>
       </div>
+
+      <!-- [SESSION 3 - TRADE REVIEW] Weekly Coaching Note -->
+      <div class="card" style="margin-top:14px;padding:16px" id="trade-review-card">
+        <p style="color:var(--t3);font-size:13px">Log at least 3 trades to unlock your coaching note.</p>
+      </div>
+
     </div><!-- /analytics -->
 
     <!-- ▸ MACRO BIAS ───────────────────────────────────────── -->
@@ -961,6 +944,76 @@
         </div>
       </div>
 
+      <!-- [SESSION 3] Trade Insight + Trade Plan -->
+      <div class="cfs-card" style="margin-bottom:16px">
+        <div class="cfs-header" style="margin-bottom:4px">
+          <span style="font-size:20px">🧠</span>
+          <span class="cfs-title">Execution Intelligence</span>
+        </div>
+        <div class="cfs-sub">Insight and structured trade plan from your macro analysis.</div>
+
+        <div id="trade-insight" style="margin-bottom:14px">
+          <p style="color:var(--t3);font-size:13px">Run analysis to generate trade insight.</p>
+        </div>
+
+        <button onclick="generateTopTradePlan()"
+          style="width:100%;padding:13px;background:var(--gold);color:#000;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;letter-spacing:.3px;margin-bottom:14px">
+          ⚡ Generate Trade Plan
+        </button>
+
+        <div id="trade-plan">
+          <p style="color:var(--t3);font-size:13px">Click above to generate your structured trade plan.</p>
+        </div>
+      </div>
+
+      <!-- [SESSION 4 - NEWS ENGINE] -->
+      <div class="cfs-card" style="margin-bottom:16px">
+        <div class="cfs-header" style="margin-bottom:4px">
+          <span style="font-size:20px">📢</span>
+          <span class="cfs-title">News Decision Engine</span>
+        </div>
+        <div class="cfs-sub" style="margin-bottom:14px">Select a news event and outcome — get an instant trade bias.</div>
+
+        <div class="rc-grid" style="margin-bottom:10px">
+          <div class="fg" style="margin:0">
+            <label>Currency</label>
+            <select id="news-currency">
+              <option value="USD">USD — US Dollar</option>
+              <option value="EUR">EUR — Euro</option>
+              <option value="GBP">GBP — British Pound</option>
+              <option value="JPY">JPY — Japanese Yen</option>
+              <option value="AUD">AUD — Australian Dollar</option>
+              <option value="NZD">NZD — New Zealand Dollar</option>
+              <option value="CAD">CAD — Canadian Dollar</option>
+              <option value="CHF">CHF — Swiss Franc</option>
+            </select>
+          </div>
+          <div class="fg" style="margin:0">
+            <label>Event Type</label>
+            <select id="news-event">
+              <option value="cpi">CPI — Inflation</option>
+              <option value="rate">Interest Rate Decision</option>
+              <option value="nfp">Employment / NFP</option>
+              <option value="gdp">GDP — Growth</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="fg" style="margin-bottom:14px">
+          <label>Outcome vs Forecast</label>
+          <select id="news-outcome">
+            <option value="better">Better than expected ↑</option>
+            <option value="worse">Worse than expected ↓</option>
+          </select>
+        </div>
+
+        <button class="btn-calc" onclick="analyzeNewsImpact()" style="width:100%;padding:13px;font-size:14px;font-weight:800">
+          ⚡ Analyze News Impact
+        </button>
+
+        <div id="news-impact" style="margin-top:14px"></div>
+      </div>
+
     </div><!-- /macro -->
 
     <!-- ▸ SETTINGS ──────────────────────────────────────── -->
@@ -1016,86 +1069,6 @@
 
     </div><!-- /settings -->
 
- <!-- ▸ ALERTS & CALENDAR ──────────────────────────────── -->
-    <div class="page" id="page-alerts">
-
-      <!-- Price Alerts -->
-      <div class="ph">
-        <div><h1>Alerts & Calendar</h1><p class="ph-sub">Live prices · Upcoming events</p></div>
-      </div>
-
-      <!-- Add Alert Form -->
-      <div class="card">
-        <div class="card-title">🔔 New Price Alert</div>
-        <div class="rc-grid">
-          <div class="fg" style="margin:0">
-            <label>Pair</label>
-            <select id="al-pair">
-              <option value="XAU/USD">XAUUSD</option>
-              <option value="GBP/USD">GBPUSD</option>
-              <option value="EUR/USD">EURUSD</option>
-              <option value="USD/JPY">USDJPY</option>
-              <option value="GBP/JPY">GBPJPY</option>
-              <option value="AUD/USD">AUDUSD</option>
-              <option value="USD/CAD">USDCAD</option>
-              <option value="NZD/USD">NZDUSD</option>
-              <option value="USD/CHF">USDCHF</option>
-              <option value="EUR/JPY">EURJPY</option>
-            </select>
-          </div>
-          <div class="fg" style="margin:0">
-            <label>Direction</label>
-            <select id="al-dir">
-              <option value="above">Price goes Above ↑</option>
-              <option value="below">Price goes Below ↓</option>
-            </select>
-          </div>
-        </div>
-        <div class="fg" style="margin-top:10px">
-          <label>Target Price</label>
-          <input id="al-price" type="number" step="any" placeholder="e.g. 2350.00"/>
-        </div>
-        <button class="btn btn-gold btn-full" style="margin-top:4px" onclick="addPriceAlert()">+ Set Alert</button>
-      </div>
-
-      <!-- Active Alerts -->
-      <div class="sec-lbl">Active Alerts</div>
-      <div id="alerts-list">
-        <p style="color:var(--t3);font-size:13px;padding:8px 0">No alerts set. Add one above.</p>
-      </div>
-
-      <!-- Live Prices -->
-      <div class="sec-lbl" style="margin-top:8px">Live Prices</div>
-      <div class="card" style="padding:14px">
-        <div id="live-prices-list">
-          <p style="color:var(--t3);font-size:13px">Loading prices…</p>
-        </div>
-        <div style="font-size:10px;color:var(--t3);margin-top:10px;text-align:right">Refreshes every 60s · Powered by Twelve Data</div>
-      </div>
-
-      <!-- Economic Calendar -->
-      <div class="sec-lbl" style="margin-top:8px">Economic Calendar</div>
-      <div class="card" style="padding:14px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-          <div style="font-size:12px;color:var(--t2)">Upcoming high-impact events (WAT)</div>
-          <button class="btn btn-ghost btn-sm" onclick="loadCalendar()">↻ Refresh</button>
-        </div>
-        <!-- Impact filter -->
-        <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
-          <button class="btn btn-sm" id="cal-filter-all" onclick="setCalFilter('all',this)"
-            style="background:var(--gold);color:#000;border:none">All</button>
-          <button class="btn btn-ghost btn-sm" id="cal-filter-high" onclick="setCalFilter('high',this)">🔴 High</button>
-          <button class="btn btn-ghost btn-sm" id="cal-filter-medium" onclick="setCalFilter('medium',this)">🟡 Medium</button>
-          <button class="btn btn-ghost btn-sm" id="cal-filter-low" onclick="setCalFilter('low',this)">⚪ Low</button>
-        </div>
-        <div id="calendar-list">
-          <p style="color:var(--t3);font-size:13px">Loading calendar…</p>
-        </div>
-        <div style="font-size:10px;color:var(--t3);margin-top:10px;text-align:right">Times shown in WAT (GMT+1) · Powered by Twelve Data</div>
-      </div>
-
-    </div><!-- /alerts -->
-
   </div><!-- /app-body -->
 
   <!-- Bottom nav (5 items to match screenshot) -->
@@ -1114,9 +1087,6 @@
     </button>
     <button class="nav-btn" data-page="macro" onclick="goPage('macro')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/></svg>Macro
-    </button>
-     <button class="nav-btn" data-page="alerts" onclick="goPage('alerts')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>Alerts
     </button>
     <button class="nav-btn" data-page="settings" onclick="goPage('settings')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Settings
@@ -1193,11 +1163,10 @@ function goPage(id) {
   const nav = document.querySelector('.nav-btn[data-page="' + id + '"]');
   if (pg)  pg.classList.add('active');
   if (nav) nav.classList.add('active');
-  if (id === 'analytics') renderAnalyticsPage();
+  if (id === 'analytics') { renderAnalyticsPage(); renderTradeReview(); }
   if (id === 'journal')   updateJournalSubtitle();
   if (id === 'settings')  _setupSettingsPage();
   if (id === 'dashboard') _refreshDashboard();
-  if (id === 'alerts')    _initAlertsPage();
   window.scrollTo(0, 0);
 }
 
