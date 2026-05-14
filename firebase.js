@@ -18,11 +18,13 @@ var firebaseConfig = {
 var FIREBASE_CONFIGURED = false;
 var _auth = null;
 var _db   = null;
+var _storage = null;  // [CLOUD STORAGE]
 
 try {
   firebase.initializeApp(firebaseConfig);
   _auth = firebase.auth();
   _db   = firebase.firestore();
+  _storage = firebase.storage();  // [CLOUD STORAGE] Firebase Storage
   FIREBASE_CONFIGURED = true;
   console.log('[TES] Firebase initialized');
 } catch (e) {
@@ -50,6 +52,6 @@ var USD_TO_NGN = 1400;
 
 // Plan prices in USD. Drives locked screen display + kobo calculation.
 var PLAN_PRICES_USD = {
-  monthly: 15,
-  annual:  120
+  monthly: 10,
+  annual:  100
 };
