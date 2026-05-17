@@ -52,6 +52,6 @@ var USD_TO_NGN = 1400;
 
 // Plan prices in USD. Drives locked screen display + kobo calculation.
 var PLAN_PRICES_USD = {
-  monthly: 15,
-  annual:  150
+  monthly: 6,
+  annual:  60
 };
