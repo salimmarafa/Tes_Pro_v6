@@ -1100,3 +1100,710 @@ function _fbErr(code) {
   };
   return m[code] || 'Something went wrong. Please try again.';
 }
+
+/* ═══════════════════════════════════════════════════════════
+   SESSION 3 — TRADE EXECUTION INSIGHT ENGINE
+   ═══════════════════════════════════════════════════════════ */
+
+function generateTradeInsight(rankings) {
+  if (!rankings || rankings.length < 2) return null;
+  const fx      = rankings.filter(r => r.currency !== 'XAU');
+  const xau     = rankings.find(r => r.currency === 'XAU');
+  const strong  = fx[0];
+  const weak    = fx[fx.length - 1];
+  const diff    = parseFloat((strong.score - weak.score).toFixed(2));
+
+  let confidence, setup, plan;
+
+  if (diff > 4) {
+    confidence = 'HIGH';
+    setup      = 'Trend Continuation';
+    plan       = `Strong fundamental divergence detected. ${strong.currency} is significantly outperforming ${weak.currency}. Look for pullbacks on ${strong.currency + weak.currency} into premium/discount zones on H1 for continuation entries. Target 1:2 minimum R:R. Avoid counter-trend trades today.`;
+  } else if (diff > 2) {
+    confidence = 'MEDIUM';
+    setup      = 'Momentum Setup';
+    plan       = `Moderate divergence between ${strong.currency} and ${weak.currency}. Bias favours ${strong.currency + weak.currency} longs, but wait for confirmation on M15 before entering. Use reduced position size. Watch for news events that could shift momentum.`;
+  } else {
+    confidence = 'LOW';
+    setup      = 'No Clear Edge';
+    plan       = `Currencies are closely scored. No dominant bias detected. Best action: stay on the sidelines or paper trade only. Wait for macro events or CB announcements to shift the landscape before committing capital.`;
+  }
+
+  let xauNote = '';
+  if (xau) {
+    const globalRisk = document.getElementById('cs-global-risk')?.value || '';
+    if (globalRisk === 'risk-off' && xau.score > 2) {
+      xauNote = `Gold (XAU) score is elevated at +${xau.score} — confirms risk-off environment. Consider XAUUSD longs as a secondary play.`;
+    } else if (globalRisk === 'risk-on' && xau.score < 0) {
+      xauNote = `Gold (XAU) score is weak at ${xau.score} — confirms risk-on environment. Favour commodity currencies (AUD, NZD, CAD).`;
+    }
+  }
+
+  return {
+    pair:       strong.currency + weak.currency,
+    direction:  'BUY ' + strong.currency + ' / SELL ' + weak.currency,
+    confidence,
+    setup,
+    plan,
+    xauNote,
+    scoreDiff:  diff,
+    strong:     strong.currency,
+    weak:       weak.currency
+  };
+}
+
+async function renderAISummary(rankings) {
+  const el = document.getElementById('ai-summary-box');
+  if (!el) return;
+  el.innerHTML = `<div style="text-align:center;padding:20px"><p style="font-size:13px;color:#5a6a8a">🤖 AI Bias Analysis coming soon.</p></div>`;
+  return;
+}
+
+function renderTradeInsight(rankings) {
+  const el = document.getElementById('trade-insight');
+  if (!el) return;
+
+  const insight = generateTradeInsight(rankings);
+
+  if (!insight) {
+    el.innerHTML = '<p style="color:#5a6a8a;font-size:13px;padding:12px 0">Run analysis to generate trade insight.</p>';
+    return;
+  }
+
+  const confColor = insight.confidence === 'HIGH'   ? '#00d4a1'
+                  : insight.confidence === 'MEDIUM' ? '#e4ae2a'
+                  : '#ff4560';
+
+  const confBg    = insight.confidence === 'HIGH'   ? 'rgba(0,212,161,.1)'
+                  : insight.confidence === 'MEDIUM' ? 'rgba(228,174,42,.1)'
+                  : 'rgba(255,69,96,.1)';
+
+  const dirCol    = insight.direction.startsWith('BUY') ? '#00d4a1' : '#ff4560';
+
+  el.innerHTML = `
+    <div style="margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">⚡ Trade Execution Insight</div>
+        <div style="font-size:22px;font-weight:900;letter-spacing:-.5px;color:var(--t1)">
+          ${insight.pair}
+          <span style="font-size:14px;font-weight:700;color:${dirCol};margin-left:8px">${insight.direction}</span>
+        </div>
+      </div>
+      <div style="text-align:right">
+        <div style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:100px;background:${confBg};border:1px solid ${confColor}40">
+          <div style="width:7px;height:7px;border-radius:50%;background:${confColor}"></div>
+          <span style="font-size:12px;font-weight:800;color:${confColor};letter-spacing:.5px">
+            ${insight.confidence} CONFIDENCE
+          </span>
+        </div>
+        <div style="font-size:11px;color:#5a6a8a;margin-top:4px">Score Δ ${insight.scoreDiff}</div>
+      </div>
+    </div>
+
+    <div style="background:#0c1525;border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px;margin-bottom:12px">
+      <div style="font-size:10px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Setup Type</div>
+      <div style="font-size:14px;font-weight:700;color:var(--gold)">${insight.setup}</div>
+    </div>
+
+    <div style="background:#0c1525;border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px;margin-bottom:${insight.xauNote ? '12px' : '0'}">
+      <div style="font-size:10px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Execution Plan</div>
+      <div style="font-size:13px;color:var(--t1);line-height:1.7">${insight.plan}</div>
+    </div>
+
+    ${insight.xauNote ? `<div style="background:rgba(228,174,42,.06);border:1px solid rgba(228,174,42,.2);border-radius:10px;padding:12px;margin-top:0">
+      <div style="font-size:12px;color:#e4ae2a;line-height:1.6">🥇 ${insight.xauNote}</div>
+    </div>` : ''}`;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SESSION 3 — ONE-CLICK TRADE PLAN GENERATOR
+   ═══════════════════════════════════════════════════════════ */
+
+function generateTradePlan(pair, rankings) {
+  if (!rankings || rankings.length < 2) return null;
+
+  const fx = rankings.filter(r => r.currency !== 'XAU');
+
+  let base, quote;
+
+  if (pair) {
+    const currencies = ['USD','EUR','GBP','JPY','AUD','NZD','CAD','CHF','XAU'];
+    base  = currencies.find(c => pair.startsWith(c));
+    quote = currencies.find(c => pair.endsWith(c) && c !== base);
+  }
+
+  if (!base || !quote) {
+    base  = fx[0]?.currency;
+    quote = fx[fx.length - 1]?.currency;
+  }
+
+  const baseRank  = rankings.find(r => r.currency === base);
+  const quoteRank = rankings.find(r => r.currency === quote);
+
+  if (!baseRank || !quoteRank) return null;
+
+  const diff      = parseFloat((baseRank.score - quoteRank.score).toFixed(2));
+  const direction = diff >= 0 ? 'BUY' : 'SELL';
+  const strong    = diff >= 0 ? base  : quote;
+  const weak      = diff >= 0 ? quote : base;
+  const absDiff   = Math.abs(diff);
+
+  const confidence = absDiff > 4 ? 'HIGH' : absDiff > 2 ? 'MEDIUM' : 'LOW';
+
+  const entry = direction === 'BUY'
+    ? 'Wait for a pullback into a premium demand zone on H1. Look for a base forming before entry. Avoid chasing the move.'
+    : 'Wait for a retracement into a supply zone on H1. Confirm rejection with a bearish structure shift on M15 before entry.';
+
+  const stopLoss = direction === 'BUY'
+    ? 'Place stop loss below the most recent swing low or below the demand zone base. Minimum 10 pips buffer.'
+    : 'Place stop loss above the most recent swing high or above the supply zone base. Minimum 10 pips buffer.';
+
+  const takeProfit = direction === 'BUY'
+    ? 'Target the next resistance level or previous swing high. Minimum 1:2 R:R. Consider partial close at 1R.'
+    : 'Target the next support level or previous swing low. Minimum 1:2 R:R. Consider partial close at 1R.';
+
+  const riskNote = `Do not risk more than 1–2% of your account on this trade. Score divergence is ${absDiff.toFixed(1)} — ${confidence.toLowerCase()} confidence setup. ${confidence === 'LOW' ? 'Consider sitting out or paper trading only.' : confidence === 'MEDIUM' ? 'Wait for strong M15 confirmation before entry.' : 'Conditions are favourable but always respect your stop.'}`;
+
+  return {
+    pair:       base + quote,
+    direction,
+    bias:       strong + ' strong / ' + weak + ' weak',
+    entry,
+    stopLoss,
+    takeProfit,
+    riskNote,
+    confidence,
+    scoreDiff:  absDiff
+  };
+}
+
+function generateTopTradePlan() {
+  const rankings = S.rankings;
+  if (!rankings || rankings.length < 2) {
+    _toast('Run currency analysis first.', 'warning');
+    return;
+  }
+  renderTradePlan(null, rankings);
+  const el = document.getElementById('trade-plan');
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderTradePlan(pair, rankings) {
+  const el = document.getElementById('trade-plan');
+  if (!el) return;
+
+  if (!rankings || rankings.length < 2) {
+    el.innerHTML = '<p style="color:var(--t3);font-size:13px;padding:12px 0">Run analysis to generate a trade plan.</p>';
+    return;
+  }
+
+  const plan = generateTradePlan(pair, rankings);
+
+  if (!plan) {
+    el.innerHTML = '<p style="color:var(--t3);font-size:13px;padding:12px 0">Could not generate plan. Check rankings.</p>';
+    return;
+  }
+
+  const dirCol   = plan.direction === 'BUY' ? '#00d4a1' : '#ff4560';
+  const dirArrow = plan.direction === 'BUY' ? '↑' : '↓';
+  const confCol  = plan.confidence === 'HIGH' ? '#00d4a1' : plan.confidence === 'MEDIUM' ? '#e4ae2a' : '#ff4560';
+  const confBg   = plan.confidence === 'HIGH' ? 'rgba(0,212,161,.08)' : plan.confidence === 'MEDIUM' ? 'rgba(228,174,42,.08)' : 'rgba(255,69,96,.08)';
+
+  const row = (icon, label, value, valColor) => `
+    <div style="padding:12px 0;border-bottom:1px solid var(--bd);display:flex;align-items:flex-start;gap:12px">
+      <div style="width:32px;height:32px;border-radius:8px;background:var(--bg1);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">${icon}</div>
+      <div style="flex:1">
+        <div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">${label}</div>
+        <div style="font-size:13px;color:${valColor || 'var(--t1)'};line-height:1.6;font-weight:500">${value}</div>
+      </div>
+    </div>`;
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">⚡ Trade Plan</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:26px;font-weight:900;letter-spacing:-.5px;color:var(--t1)">${plan.pair}</span>
+          <span style="font-size:15px;font-weight:800;color:${dirCol};background:${dirCol}18;border:1px solid ${dirCol}40;border-radius:8px;padding:4px 12px">
+            ${dirArrow} ${plan.direction}
+          </span>
+          <span style="font-size:11px;font-weight:800;color:${confCol};background:${confBg};border:1px solid ${confCol}30;border-radius:20px;padding:3px 10px">
+            ${plan.confidence} CONF
+          </span>
+        </div>
+        <div style="font-size:12px;color:var(--t2);margin-top:6px">${plan.bias}</div>
+      </div>
+      <button onclick="generateTopTradePlan()"
+        style="background:var(--bg3);border:1px solid var(--bd2);color:var(--gold);border-radius:10px;padding:9px 16px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0">
+        ↻ Regenerate
+      </button>
+    </div>
+
+    <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:12px;padding:0 14px;overflow:hidden">
+      ${row('🎯','Entry Condition', plan.entry)}
+      ${row('🛑','Stop Loss', plan.stopLoss, '#ff4560')}
+      ${row('💰','Take Profit', plan.takeProfit, '#00d4a1')}
+      <div style="padding:12px 0;display:flex;align-items:flex-start;gap:12px">
+        <div style="width:32px;height:32px;border-radius:8px;background:var(--bg1);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">⚠️</div>
+        <div style="flex:1">
+          <div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Risk Note</div>
+          <div style="font-size:13px;color:var(--gold);line-height:1.6;font-weight:500">${plan.riskNote}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SESSION 3 — TRADING SESSION TIMER
+   ═══════════════════════════════════════════════════════════ */
+
+const TRADING_SESSIONS = [
+  { name: 'London',   open: 7,  close: 16, flag: '🇬🇧', color: '#3d9eff', pairs: 'GBP, EUR, XAU' },
+  { name: 'New York', open: 12, close: 21, flag: '🇺🇸', color: '#00d4a1', pairs: 'USD, CAD' },
+  { name: 'Tokyo',    open: 0,  close: 9,  flag: '🇯🇵', color: '#e4ae2a', pairs: 'JPY, AUD, NZD' },
+  { name: 'Sydney',   open: 22, close: 7,  flag: '🇦🇺', color: '#b464ff', pairs: 'AUD, NZD' }
+];
+
+function _utcDecimalHour() {
+  const now = new Date();
+  return now.getUTCHours() + now.getUTCMinutes() / 60 + now.getUTCSeconds() / 3600;
+}
+
+function _isSessionActive(session) {
+  const h = _utcDecimalHour();
+  if (session.open < session.close) {
+    return h >= session.open && h < session.close;
+  } else {
+    return h >= session.open || h < session.close;
+  }
+}
+
+function _minutesUntil(targetHourUTC) {
+  const now     = new Date();
+  const target  = new Date(now);
+  target.setUTCHours(targetHourUTC, 0, 0, 0);
+  if (target <= now) target.setUTCDate(target.getUTCDate() + 1);
+  return Math.round((target - now) / 60000);
+}
+
+function _fmtMins(mins) {
+  if (mins <= 0) return 'Now';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function _buildSessionTimerHTML() {
+  const now    = new Date();
+  const watHr  = now.getUTCHours() + 1;
+  const watMin = now.getUTCMinutes();
+  const timeStr = `${String(watHr % 24).padStart(2,'0')}:${String(watMin).padStart(2,'0')} WAT`;
+
+  const cards = TRADING_SESSIONS.map(s => {
+    const active    = _isSessionActive(s);
+    const minsLeft  = active ? _minutesUntil(s.close) : _minutesUntil(s.open);
+    const label     = active ? 'Closes in' : 'Opens in';
+    const statusTxt = active ? 'OPEN' : 'CLOSED';
+    const statusCol = active ? s.color : 'var(--t3)';
+    const statusBg  = active ? s.color + '18' : 'var(--bg1)';
+    const borderCol = active ? s.color + '50' : 'var(--bd)';
+
+    return `
+      <div style="background:${statusBg};border:1px solid ${borderCol};border-radius:12px;padding:13px 14px;position:relative;overflow:hidden">
+        ${active ? `<div style="position:absolute;top:0;left:0;right:0;height:2px;background:${s.color}"></div>` : ''}
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="display:flex;align-items:center;gap:7px">
+            <span style="font-size:16px">${s.flag}</span>
+            <span style="font-size:13px;font-weight:800;color:var(--t1)">${s.name}</span>
+          </div>
+          <span style="font-size:10px;font-weight:800;color:${statusCol};background:${active ? s.color+'22' : 'var(--bg2)'};border:1px solid ${active ? s.color+'40' : 'var(--bd)'};border-radius:20px;padding:2px 8px;letter-spacing:.5px">
+            ${statusTxt}
+          </span>
+        </div>
+        <div style="font-size:10px;color:var(--t3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px">${label}</div>
+        <div style="font-size:22px;font-weight:900;color:${active ? s.color : 'var(--t2)'};line-height:1;margin-bottom:6px">
+          ${_fmtMins(minsLeft)}
+        </div>
+        <div style="font-size:10px;color:var(--t3)">Active: ${s.pairs}</div>
+      </div>`;
+  }).join('');
+
+  const activeSessions = TRADING_SESSIONS.filter(s => _isSessionActive(s));
+  const londonActive   = activeSessions.some(s => s.name === 'London');
+  const nyActive       = activeSessions.some(s => s.name === 'New York');
+  const overlap        = londonActive && nyActive;
+
+  let advice, adviceCol;
+  if (overlap) {
+    advice    = '🔥 London/NY overlap — highest volatility. Best time to trade.';
+    adviceCol = '#00d4a1';
+  } else if (londonActive) {
+    advice    = '✅ London session open — your primary trading window.';
+    adviceCol = '#3d9eff';
+  } else if (nyActive) {
+    advice    = '🟡 New York session open — moderate opportunity.';
+    adviceCol = '#e4ae2a';
+  } else if (activeSessions.length) {
+    advice    = '⚠️ Asian/Sydney session — low volatility. Avoid major pairs.';
+    adviceCol = '#e4ae2a';
+  } else {
+    advice    = '😴 All sessions closed. Review analysis and prepare for London open.';
+    adviceCol = 'var(--t2)';
+  }
+
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">🕐 Session Timer</div>
+        <div style="font-size:13px;font-weight:700;color:var(--t2)">${timeStr}</div>
+      </div>
+      <div style="font-size:10px;color:var(--t3);text-align:right">Updates live<br/>every 30s</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      ${cards}
+    </div>
+    <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:10px;padding:11px 14px;font-size:12px;font-weight:600;color:${adviceCol};line-height:1.5">
+      ${advice}
+    </div>`;
+}
+
+let _sessionTimerInterval = null;
+
+function _startSessionTimer() {
+  _renderSessionTimer();
+  clearInterval(_sessionTimerInterval);
+  _sessionTimerInterval = setInterval(_renderSessionTimer, 30000);
+}
+
+function _renderSessionTimer() {
+  const el = document.getElementById('session-timer-card');
+  if (!el) return;
+  el.innerHTML = _buildSessionTimerHTML();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SESSION 3 — TRADE REVIEW MODE
+   ═══════════════════════════════════════════════════════════ */
+
+function _analyseTradeHistory() {
+  const trades = S.trades;
+  if (!trades || trades.length < 3) return null;
+
+  const wins   = trades.filter(t => t.outcome === 'win');
+  const losses = trades.filter(t => t.outcome === 'loss');
+  const be     = trades.filter(t => t.outcome === 'be');
+  const total  = trades.length;
+  const wr     = Math.round(wins.length / total * 100);
+
+  const avgRR = wins.length
+    ? (wins.reduce((a, t) => a + parseFloat(t.rr || 0), 0) / wins.length).toFixed(2)
+    : 0;
+
+  const netR = trades.reduce((a, t) => {
+    return a + (t.outcome === 'win' ? parseFloat(t.rr || 1) : t.outcome === 'loss' ? -1 : 0);
+  }, 0);
+
+  const pairMap = {};
+  trades.forEach(t => {
+    if (!t.pair) return;
+    if (!pairMap[t.pair]) pairMap[t.pair] = { wins: 0, losses: 0, total: 0 };
+    pairMap[t.pair].total++;
+    if (t.outcome === 'win')  pairMap[t.pair].wins++;
+    if (t.outcome === 'loss') pairMap[t.pair].losses++;
+  });
+
+  const pairList = Object.entries(pairMap).filter(([, d]) => d.total >= 2);
+  const bestPair = pairList.sort((a, b) => {
+    return (b[1].wins / b[1].total) - (a[1].wins / a[1].total);
+  })[0];
+  const worstPair = pairList.sort((a, b) => {
+    return (a[1].wins / a[1].total) - (b[1].wins / b[1].total);
+  })[0];
+
+  const sessionMap = {};
+  trades.forEach(t => {
+    if (!t.session) return;
+    if (!sessionMap[t.session]) sessionMap[t.session] = { wins: 0, total: 0 };
+    sessionMap[t.session].total++;
+    if (t.outcome === 'win') sessionMap[t.session].wins++;
+  });
+
+  const sessionList = Object.entries(sessionMap).filter(([, d]) => d.total >= 2);
+  const bestSession = sessionList.sort((a, b) => {
+    return (b[1].wins / b[1].total) - (a[1].wins / a[1].total);
+  })[0];
+
+  let streak = 0, streakType = '';
+  for (let i = 0; i < trades.length; i++) {
+    const o = trades[i].outcome;
+    if (i === 0) { streakType = o; streak = 1; continue; }
+    if (o === streakType) streak++;
+    else break;
+  }
+
+  const last5    = trades.slice(0, 5);
+  const last5WR  = Math.round(last5.filter(t => t.outcome === 'win').length / last5.length * 100);
+
+  const buyTrades  = trades.filter(t => t.direction === 'BUY');
+  const sellTrades = trades.filter(t => t.direction === 'SELL');
+  const buyWR      = buyTrades.length  ? Math.round(buyTrades.filter(t => t.outcome === 'win').length / buyTrades.length * 100)  : null;
+  const sellWR     = sellTrades.length ? Math.round(sellTrades.filter(t => t.outcome === 'win').length / sellTrades.length * 100) : null;
+
+  return {
+    total, wins: wins.length, losses: losses.length, be: be.length,
+    wr, avgRR, netR: netR.toFixed(1),
+    bestPair, worstPair, bestSession,
+    streak, streakType,
+    last5WR, last5Count: last5.length,
+    buyWR, sellWR,
+    buyCount: buyTrades.length, sellCount: sellTrades.length
+  };
+}
+
+function _generateCoachingNote(d) {
+  const notes = [];
+
+  if (d.wr >= 60) {
+    notes.push(`Your win rate of ${d.wr}% is strong. Focus on protecting this edge by not overtrading — quality over quantity.`);
+  } else if (d.wr >= 45) {
+    notes.push(`A ${d.wr}% win rate is workable if your R:R is consistent. Your average winner is ${d.avgRR}R — keep targeting setups where you can achieve at least 1:2.`);
+  } else {
+    notes.push(`Your win rate is currently ${d.wr}%. This suggests your entries need refinement. Review your last 5 losses and identify whether the issue is entry timing, zone selection, or news events.`);
+  }
+
+  if (parseFloat(d.netR) > 0) {
+    notes.push(`You're net positive at +${d.netR}R across ${d.total} trades — you are profitable. Protect this by sticking to your system.`);
+  } else {
+    notes.push(`Your net R is ${d.netR}R. Even with a good win rate, cutting losses short and letting winners run will improve this number significantly.`);
+  }
+
+  if (d.bestPair) {
+    const [pair, stats] = d.bestPair;
+    const pairWR = Math.round(stats.wins / stats.total * 100);
+    notes.push(`Your strongest pair is ${pair} with a ${pairWR}% win rate over ${stats.total} trades. Prioritise this pair when it aligns with your macro bias.`);
+  }
+
+  if (d.worstPair && d.worstPair[0] !== d.bestPair?.[0]) {
+    const [pair, stats] = d.worstPair;
+    const pairWR = Math.round(stats.wins / stats.total * 100);
+    notes.push(`Avoid ${pair} for now — your win rate there is only ${pairWR}% across ${stats.total} trades. This pair may not suit your current setup style.`);
+  }
+
+  if (d.bestSession) {
+    const [sess, stats] = d.bestSession;
+    const sessWR = Math.round(stats.wins / stats.total * 100);
+    notes.push(`The ${sess} session is where you perform best (${sessWR}% WR). Concentrate your trading energy during this window.`);
+  }
+
+  if (d.buyWR !== null && d.sellWR !== null && d.buyCount >= 2 && d.sellCount >= 2) {
+    if (Math.abs(d.buyWR - d.sellWR) >= 15) {
+      const betterDir = d.buyWR > d.sellWR ? 'BUY' : 'SELL';
+      const betterWR  = d.buyWR > d.sellWR ? d.buyWR : d.sellWR;
+      notes.push(`You trade ${betterDir} setups significantly better (${betterWR}% WR). Lean into this — only take the other direction when the macro setup is extremely clear.`);
+    }
+  }
+
+  if (d.last5Count >= 5) {
+    if (d.last5WR >= 60) {
+      notes.push(`Your last 5 trades show ${d.last5WR}% WR — you're in good form. Stay disciplined and avoid changing your process.`);
+    } else if (d.last5WR <= 30) {
+      notes.push(`Your recent form is concerning — only ${d.last5WR}% across your last 5 trades. Consider reducing position size or taking a short break to reset your mindset.`);
+    }
+  }
+
+  if (d.streak >= 3) {
+    if (d.streakType === 'win') {
+      notes.push(`You're on a ${d.streak}-trade winning streak. Stay humble — avoid oversizing just because you're running hot.`);
+    } else if (d.streakType === 'loss') {
+      notes.push(`You've had ${d.streak} consecutive losses. This is the most dangerous time to trade — step back, review your setups, and only return when conditions are clear.`);
+    }
+  }
+
+  return notes;
+}
+
+function renderTradeReview() {
+  const el = document.getElementById('trade-review-card');
+  if (!el) return;
+
+  const d = _analyseTradeHistory();
+
+  if (!d) {
+    el.innerHTML = '<div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">📋 Trade Review</div><p style="color:var(--t3);font-size:13px">Log at least 3 trades to unlock your coaching note.</p>';
+    return;
+  }
+
+  const notes    = _generateCoachingNote(d);
+  const netCol   = parseFloat(d.netR) >= 0 ? 'var(--green)' : 'var(--red)';
+  const wrCol    = d.wr >= 55 ? 'var(--green)' : d.wr >= 40 ? 'var(--gold)' : 'var(--red)';
+  const streakIcon = d.streakType === 'win' ? '🔥' : d.streakType === 'loss' ? '❄️' : '—';
+
+  el.innerHTML = `
+    <div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:14px">
+      📋 Weekly Trade Review
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px">
+      ${[
+        ['Win Rate',  d.wr + '%',         wrCol],
+        ['Net R',     (parseFloat(d.netR) >= 0 ? '+' : '') + d.netR + 'R', netCol],
+        ['Avg R:R',   '1:' + d.avgRR,     'var(--gold)'],
+        ['Streak',    streakIcon + ' ' + d.streak, d.streakType === 'win' ? 'var(--green)' : d.streakType === 'loss' ? 'var(--red)' : 'var(--t2)']
+      ].map(([lbl, val, col]) => `
+        <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:10px;padding:10px;text-align:center">
+          <div style="font-size:16px;font-weight:900;color:${col};margin-bottom:3px">${val}</div>
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.5px">${lbl}</div>
+        </div>`).join('')}
+    </div>
+
+    <div style="font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">
+      🧠 Coaching Note — based on your ${d.total} trades
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      ${notes.map((note, i) => `
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <div style="width:22px;height:22px;border-radius:50%;background:var(--gold-dim);border:1px solid rgba(228,174,42,.3);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:var(--gold);flex-shrink:0;margin-top:1px">${i + 1}</div>
+          <div style="font-size:13px;color:var(--t1);line-height:1.7">${note}</div>
+        </div>`).join('')}
+    </div>
+
+    ${d.bestPair || d.bestSession ? `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--bd)">
+      ${d.bestPair ? `<span style="font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;background:var(--green-dim);color:var(--green);border:1px solid rgba(0,212,161,.25)">✅ Best pair: ${d.bestPair[0]}</span>` : ''}
+      ${d.worstPair ? `<span style="font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;background:var(--red-dim);color:var(--red);border:1px solid rgba(255,69,96,.25)">⚠️ Avoid: ${d.worstPair[0]}</span>` : ''}
+      ${d.bestSession ? `<span style="font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;background:var(--blue-dim);color:var(--blue);border:1px solid rgba(61,158,255,.25)">🕐 Best session: ${d.bestSession[0]}</span>` : ''}
+    </div>` : ''}`;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SESSION 4 — NEWS DECISION ENGINE
+   ═══════════════════════════════════════════════════════════ */
+
+const NEWS_PAIRS = {
+  USD: { quote: ['EUR/USD','GBP/USD','AUD/USD','NZD/USD'], base: ['USD/JPY','USD/CAD','USD/CHF'] },
+  EUR: { quote: ['EUR/GBP','EUR/JPY','EUR/CHF','EUR/CAD'], base: ['EUR/USD'] },
+  GBP: { quote: ['GBP/JPY','GBP/CHF','GBP/CAD'], base: ['GBP/USD','EUR/GBP'] },
+  JPY: { quote: [], base: ['USD/JPY','EUR/JPY','GBP/JPY','AUD/JPY','NZD/JPY'] },
+  AUD: { quote: ['AUD/JPY','AUD/CAD','AUD/NZD'], base: ['AUD/USD'] },
+  NZD: { quote: ['NZD/JPY','NZD/CAD'], base: ['NZD/USD','AUD/NZD'] },
+  CAD: { quote: [], base: ['USD/CAD','GBP/CAD','AUD/CAD','EUR/CAD'] },
+  CHF: { quote: [], base: ['USD/CHF','EUR/CHF','GBP/CHF'] }
+};
+
+const NEWS_EXPLANATIONS = {
+  cpi: {
+    better: 'Higher-than-expected inflation signals the central bank may hike rates or stay hawkish longer. This is bullish for the currency as higher rates attract capital inflows.',
+    worse:  'Lower-than-expected inflation reduces pressure on the central bank to hike rates, often triggering a dovish repricing. This weakens the currency as rate cut expectations rise.'
+  },
+  rate: {
+    better: 'A rate hike or more hawkish-than-expected decision increases yield differentials, making the currency more attractive to institutional investors. Strong bullish signal.',
+    worse:  'A rate cut or dovish surprise reduces the currency\'s yield advantage. Capital flows out toward higher-yielding alternatives, putting downward pressure on the currency.'
+  },
+  nfp: {
+    better: 'Strong employment data signals a healthy economy and supports central bank tightening. More jobs = more consumer spending = inflationary pressure = bullish for currency.',
+    worse:  'Weak employment undermines the central bank\'s case for rate hikes and raises recession fears. This is bearish for the currency, especially impactful on USD pairs.'
+  },
+  gdp: {
+    better: 'GDP beating expectations confirms economic strength and supports a hawkish central bank stance. Strong growth = bullish currency as rate hike probability increases.',
+    worse:  'GDP missing estimates signals economic contraction risk. Central banks are unlikely to hike in a slowing economy, weakening the currency against its peers.'
+  }
+};
+
+const NEWS_EVENT_NAMES = {
+  cpi:  'CPI (Inflation)',
+  rate: 'Interest Rate Decision',
+  nfp:  'Employment / NFP',
+  gdp:  'GDP (Growth)'
+};
+
+function analyzeNewsImpact() {
+  const currency = document.getElementById('news-currency')?.value;
+  const event    = document.getElementById('news-event')?.value;
+  const outcome  = document.getElementById('news-outcome')?.value;
+
+  if (!currency || !event || !outcome) {
+    _toast('Please select all three fields.', 'warning');
+    return;
+  }
+
+  const isBullish = outcome === 'better';
+
+  const pairs    = NEWS_PAIRS[currency] || { base: [], quote: [] };
+  const affected = [];
+
+  if (isBullish) {
+    pairs.base.forEach(p  => affected.push({ pair: p, direction: 'BUY',  reason: currency + ' is base — buy the pair' }));
+    pairs.quote.forEach(p => affected.push({ pair: p, direction: 'SELL', reason: currency + ' is quote — sell the pair' }));
+  } else {
+    pairs.base.forEach(p  => affected.push({ pair: p, direction: 'SELL', reason: currency + ' is base — sell the pair' }));
+    pairs.quote.forEach(p => affected.push({ pair: p, direction: 'BUY',  reason: currency + ' is quote — buy the pair' }));
+  }
+
+  const result = {
+    currency,
+    event,
+    outcome,
+    isBullish,
+    bias:        isBullish ? 'BULLISH' : 'BEARISH',
+    explanation: NEWS_EXPLANATIONS[event]?.[outcome] || '',
+    pairs:       affected.slice(0, 5)
+  };
+
+  renderNewsImpact(result);
+
+  const el = document.getElementById('news-impact');
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderNewsImpact(result) {
+  const el = document.getElementById('news-impact');
+  if (!el) return;
+
+  const biasCol  = result.isBullish ? '#00d4a1' : '#ff4560';
+  const biasBg   = result.isBullish ? 'rgba(0,212,161,.08)' : 'rgba(255,69,96,.08)';
+  const biasBdr  = result.isBullish ? 'rgba(0,212,161,.25)' : 'rgba(255,69,96,.25)';
+  const biasIcon = result.isBullish ? '↑' : '↓';
+
+  const pairRows = result.pairs.map(p => {
+    const col = p.direction === 'BUY' ? '#00d4a1' : '#ff4560';
+    const arr = p.direction === 'BUY' ? '↑' : '↓';
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)">
+        <div style="font-size:15px;font-weight:900;color:var(--t1);letter-spacing:-.3px">${p.pair}</div>
+        <span style="font-size:12px;font-weight:800;color:${col};background:${col}18;border:1px solid ${col}40;border-radius:8px;padding:4px 12px">
+          ${arr} ${p.direction}
+        </span>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="background:${biasBg};border:1px solid ${biasBdr};border-radius:12px;padding:14px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px">
+          📢 News Impact — ${result.currency} ${NEWS_EVENT_NAMES[result.event]}
+        </div>
+        <div style="font-size:11px;color:var(--t2)">
+          ${result.outcome === 'better' ? 'Better than expected' : 'Worse than expected'}
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 16px;border-radius:100px;background:${biasBg};border:1px solid ${biasBdr}">
+        <span style="font-size:20px;font-weight:900;color:${biasCol}">${biasIcon}</span>
+        <span style="font-size:14px;font-weight:900;color:${biasCol};letter-spacing:.5px">${result.bias}</span>
+      </div>
+    </div>
+
+    <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Why?</div>
+      <div style="font-size:13px;color:var(--t1);line-height:1.75">${result.explanation}</div>
+    </div>
+
+    <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:12px;padding:14px 16px">
+      <div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Affected Pairs</div>
+      <div style="font-size:11px;color:var(--t2);margin-bottom:8px">Based on ${result.currency} ${result.bias === 'BULLISH' ? 'strength' : 'weakness'}</div>
+      ${pairRows}
+      <div style="padding-top:12px;font-size:11px;color:var(--t3);line-height:1.6">
+        ⚠️ Wait for confirmation on your chart before entering. News analysis is directional guidance — always validate with structure and a valid entry model.
+      </div>
+    </div>`;
+}
+
