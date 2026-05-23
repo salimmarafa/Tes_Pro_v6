@@ -1101,6 +1101,386 @@ function _fbErr(code) {
   return m[code] || 'Something went wrong. Please try again.';
 }
 
+/* ================================================================
+   TES GOLD DESK — Full JavaScript Engine
+   6 Features: Bias Engine | Why Gold Moved | News Interpreter |
+               Confidence Score | Execution Insight | Sessions
+   ================================================================ */
+
+/* ─── GOLD CONSTANTS ─────────────────────────────────────────── */
+
+var GOLD_NEWS_LOGIC = {
+  cpi: {
+    better: {
+      bias: 'BEARISH', reaction: 'Bearish Gold',
+      why: 'Hotter-than-expected CPI strengthens the USD and raises expectations of prolonged rate hikes. Higher real yields make gold less attractive as a non-yielding asset. Expect gold to sell off.',
+      expect: 'USD rallies. Treasury yields rise. Gold faces selling pressure. Watch for a pullback to key support zones.'
+    },
+    worse: {
+      bias: 'BULLISH', reaction: 'Bullish Gold',
+      why: 'Softer-than-expected CPI weakens the USD and increases probability of future rate cuts. Lower real yields support gold as a store of value. Expect gold to rally.',
+      expect: 'USD weakens. Treasury yields drop. Gold attracts buyers. Look for breakout above resistance.'
+    },
+    inline: {
+      bias: 'NEUTRAL', reaction: 'Neutral — Wait for direction',
+      why: 'CPI in line with expectations means no major repricing of Fed policy. Markets had this priced in already.',
+      expect: 'Gold may consolidate. Watch USD and yield reaction for direction clues.'
+    }
+  },
+  nfp: {
+    better: {
+      bias: 'BEARISH', reaction: 'Bearish Gold',
+      why: 'Strong job numbers signal a healthy economy. The Fed has less reason to cut rates, keeping real yields elevated and pressuring gold downward.',
+      expect: 'USD strengthens on jobs beat. Gold selling likely on open. Watch for a retest of recent lows.'
+    },
+    worse: {
+      bias: 'BULLISH', reaction: 'Bullish Gold',
+      why: 'Weak NFP data signals economic slowdown, increasing probability of Fed rate cuts. Dollar weakens and gold attracts safe-haven and rate-cut positioning.',
+      expect: 'USD dumps on miss. Gold and JPY rally together. Strong buy signal on any pullback.'
+    },
+    inline: {
+      bias: 'NEUTRAL', reaction: 'Neutral — Range likely',
+      why: 'Jobs data met expectations. No major shock to Fed rate path.',
+      expect: 'Gold likely ranges. Monitor technical levels for next directional clue.'
+    }
+  },
+  fomc: {
+    hike: {
+      bias: 'BEARISH', reaction: 'Bearish Gold',
+      why: 'Rate hike increases real yields and strengthens USD. Gold, a non-yielding asset, becomes less attractive versus dollar-denominated alternatives.',
+      expect: 'Immediate USD rally. Gold typically sells off on hike. Look for short opportunities near resistance.'
+    },
+    cut: {
+      bias: 'BULLISH', reaction: 'Strongly Bullish Gold',
+      why: 'Rate cut reduces opportunity cost of holding gold. USD weakens. Real yields fall. This is one of the most powerful catalysts for a gold rally.',
+      expect: 'Strong USD selloff. Gold and silver rally hard. Look for breakout setups on any pullback.'
+    },
+    hold: {
+      bias: 'NEUTRAL', reaction: 'Neutral — Tone matters',
+      why: 'Hold is largely priced in. The key driver will be the statement language and dot plot — hawkish tone bearish for gold, dovish tone bullish.',
+      expect: 'Initial spike then reversal common. Wait for press conference for true direction.'
+    }
+  },
+  employment: {
+    better: {
+      bias: 'BEARISH', reaction: 'Bearish Gold',
+      why: 'Strong employment reduces urgency for Fed rate cuts. Supports USD and weighs on gold.',
+      expect: 'Modest USD strength. Gold may drift lower unless geopolitical risk offsets.'
+    },
+    worse: {
+      bias: 'BULLISH', reaction: 'Bullish Gold',
+      why: 'Weak employment raises recession risk. Safe-haven demand for gold rises and rate cut bets increase.',
+      expect: 'Gold bid on weakness. Risk-off tone supports precious metals.'
+    },
+    inline: {
+      bias: 'NEUTRAL', reaction: 'Neutral',
+      why: 'Employment in line with forecast. No material change to rate outlook.',
+      expect: 'Gold consolidates. Look to other catalysts for next move.'
+    }
+  },
+  gdp: {
+    better: {
+      bias: 'BEARISH', reaction: 'Bearish Gold',
+      why: 'Strong GDP growth reduces recession risk and supports the case for higher-for-longer rates. Bearish for gold short-term.',
+      expect: 'USD strengthens on growth beat. Gold faces headwinds. May hold on geopolitical bids.'
+    },
+    worse: {
+      bias: 'BULLISH', reaction: 'Bullish Gold',
+      why: 'GDP miss signals economic weakness. Recession fears rise. Flight to safe-haven assets including gold increases.',
+      expect: 'Gold rallies alongside bonds and JPY. Risk-off environment. Strong buy pressure expected.'
+    },
+    inline: {
+      bias: 'NEUTRAL', reaction: 'Neutral',
+      why: 'GDP met consensus. Market had this priced in.',
+      expect: 'Gold may trade sideways. Monitor risk sentiment for next catalyst.'
+    }
+  }
+};
+
+var GOLD_WHY_MOVED = {
+  rallied: {
+    cpi: 'Gold rallied today because CPI came in softer than expected, weakening the USD and increasing market expectations of future Fed rate cuts. Lower real yields lifted gold prices as the opportunity cost of holding bullion declined.',
+    nfp: 'Gold surged following a weak NFP report. The disappointing jobs data triggered a broad USD selloff and boosted rate-cut expectations, sending gold sharply higher on increased safe-haven and monetary easing demand.',
+    fomc: 'Gold climbed strongly after the FOMC delivered a dovish message — either cutting rates or signalling future cuts. The USD dropped and real yields fell, creating a powerful tailwind for gold.',
+    geopolitical: 'Gold rallied on rising geopolitical tensions. Safe-haven demand spiked as investors moved capital out of risk assets and into gold, driving prices higher despite mixed macro data.',
+    yields: 'Gold moved higher as Treasury yields fell. Declining bond yields reduce the opportunity cost of holding non-yielding gold, making it more attractive to institutional and retail buyers alike.',
+    usd: 'Gold rallied as the USD weakened broadly. Since gold is priced in dollars, a softer USD makes gold cheaper for foreign buyers, increasing demand and pushing prices higher.'
+  },
+  'sold-off': {
+    cpi: 'Gold sold off after CPI printed hotter than expected. The stronger inflation reading reinforced expectations that the Fed will keep rates elevated for longer, boosting real yields and the USD — both headwinds for gold.',
+    nfp: 'Gold declined sharply following a strong NFP beat. Robust jobs data signalled Fed resilience, reduced rate-cut bets, and sent USD higher — all bearish for gold as a non-yielding asset.',
+    fomc: 'Gold sold off after a hawkish FOMC outcome. The Fed either hiked rates or delivered a hawkish tone, strengthening the USD and raising real yields, which are the key fundamental headwinds for gold.',
+    geopolitical: 'Gold sold off as geopolitical risk premium was unwound. Easing tensions reduced safe-haven demand, and profit-taking from recent buyers added additional selling pressure.',
+    yields: 'Gold declined as Treasury yields moved higher. Rising yields increase the opportunity cost of holding gold versus interest-bearing assets, leading to rotation out of bullion.',
+    usd: 'Gold fell as the USD strengthened sharply. A stronger dollar increases the cost of gold for foreign buyers, reducing demand and pressuring prices lower across global markets.'
+  },
+  ranging: {
+    cpi: 'Gold is consolidating today as the CPI data came broadly in line with expectations. With no major repricing of the Fed path, gold is caught between support and resistance, awaiting a fresh catalyst.',
+    nfp: 'Gold is ranging after a mixed NFP report. The headline number was in line with forecasts, giving neither bulls nor bears a clear edge. Watch for a breakout on the next macro catalyst.',
+    fomc: 'Gold is indecisive following the FOMC hold. The Fed kept rates unchanged as expected. The market is parsing the statement for directional clues — until a clear tone emerges, gold is likely to consolidate.',
+    geopolitical: 'Gold is in a consolidation phase. Geopolitical tensions remain present but are not escalating, keeping gold supported but not surging. A resolution could trigger a pullback; escalation could drive another rally.',
+    yields: 'Gold is ranging as yields trade sideways. Without a directional move in bond markets, gold lacks a clear fundamental driver and is likely to remain in a tight range until yields break out.',
+    usd: 'Gold is consolidating with a neutral USD environment. Without a strong directional move in the dollar, gold is trading technically — watch key support and resistance for the next move.'
+  }
+};
+
+var GOLD_SESSIONS = [
+  { name: 'London Open', time: '07:00 - 16:00 UTC', utcOpen: 7, utcClose: 16, tag: 'high', note: 'Primary gold session' },
+  { name: 'NY Open', time: '12:00 - 21:00 UTC', utcOpen: 12, utcClose: 21, tag: 'high', note: 'Most volatile for gold' },
+  { name: 'London / NY Overlap', time: '12:00 - 16:00 UTC', utcOpen: 12, utcClose: 16, tag: 'hottest', note: 'Highest gold volatility' },
+  { name: 'Asian Session', time: '00:00 - 07:00 UTC', utcOpen: 0, utcClose: 7, tag: 'low', note: 'Low gold volatility' }
+];
+
+/* ─── 1. BIAS ENGINE ─────────────────────────────────────────── */
+
+function runGoldBiasEngine() {
+  var usd      = document.getElementById('gd-usd-strength')?.value;
+  var yields   = document.getElementById('gd-yields')?.value;
+  var fed      = document.getElementById('gd-fed')?.value;
+  var risk     = document.getElementById('gd-risk')?.value;
+  var infl     = document.getElementById('gd-inflation')?.value;
+
+  if (!usd || !yields || !fed || !risk || !infl) {
+    _toast('Please fill all 5 factors to generate bias.', 'warning');
+    return;
+  }
+
+  // Score: positive = bullish gold, negative = bearish gold
+  var score = 0;
+  var bullDrivers = [], bearDrivers = [];
+
+  // USD
+  if (usd === 'weak')    { score += 2; bullDrivers.push('Weak USD'); }
+  if (usd === 'strong')  { score -= 2; bearDrivers.push('Strong USD'); }
+
+  // Yields
+  if (yields === 'falling') { score += 2; bullDrivers.push('Falling bond yields'); }
+  if (yields === 'rising')  { score -= 2; bearDrivers.push('Rising bond yields'); }
+
+  // Fed
+  if (fed === 'dovish')   { score += 2; bullDrivers.push('Dovish Fed expectations'); }
+  if (fed === 'hawkish')  { score -= 2; bearDrivers.push('Hawkish Fed stance'); }
+
+  // Risk
+  if (risk === 'risk-off') { score += 1; bullDrivers.push('Risk-off sentiment'); }
+  if (risk === 'risk-on')  { score -= 1; bearDrivers.push('Risk-on environment'); }
+
+  // Inflation
+  if (infl === 'rising')  { score += 1; bullDrivers.push('Rising inflation expectations'); }
+  if (infl === 'falling') { score -= 1; bearDrivers.push('Falling inflation'); }
+
+  // Max possible: +8 / -8
+  var pct = Math.round(((score + 8) / 16) * 100);
+  var conf, confLabel;
+  var absScore = Math.abs(score);
+  if (absScore >= 7)      { conf = 92; confLabel = 'VERY HIGH'; }
+  else if (absScore >= 5) { conf = 78; confLabel = 'HIGH'; }
+  else if (absScore >= 3) { conf = 62; confLabel = 'MEDIUM'; }
+  else                    { conf = 40; confLabel = 'LOW'; }
+
+  var bias, cls, arrow, setupType, entry, sl, tp, rr;
+
+  if (score >= 3) {
+    bias = 'BULLISH'; cls = 'bull'; arrow = '&#8593;';
+    setupType = score >= 6 ? 'Trend Continuation (Strong)' : 'Momentum Buy';
+    entry = 'Wait for pullback into H1 demand zone or institutional order block.';
+    sl = 'Below the most recent swing low with adequate buffer.';
+    tp = 'Target next liquidity high or previous resistance area.';
+    rr = '1:2 minimum — move stop to breakeven at +1R.';
+  } else if (score <= -3) {
+    bias = 'BEARISH'; cls = 'bear'; arrow = '&#8595;';
+    setupType = score <= -6 ? 'Trend Continuation (Strong)' : 'Momentum Sell';
+    entry = 'Wait for rejection from H1 supply zone or institutional bearish order block.';
+    sl = 'Above the most recent swing high with adequate buffer.';
+    tp = 'Target next liquidity low or previous support area.';
+    rr = '1:2 minimum — move stop to breakeven at +1R.';
+  } else {
+    bias = 'NEUTRAL'; cls = 'neut'; arrow = '&#8594;';
+    setupType = 'Range / No clear edge';
+    entry = 'No clear directional bias. Wait for macro clarity before entering.';
+    sl = 'N/A — sidelines recommended.';
+    tp = 'N/A — wait for a clean macro setup to form.';
+    rr = 'Do not force a trade in a neutral environment.';
+  }
+
+  var bullHTML = bullDrivers.map(d => '<span class="gd-driver pos">&#10003; ' + d + '</span>').join('');
+  var bearHTML = bearDrivers.map(d => '<span class="gd-driver neg">&#10007; ' + d + '</span>').join('');
+
+  var el = document.getElementById('gd-bias-result');
+  el.style.display = 'block';
+  el.innerHTML =
+    '<div class="gd-bias-badge ' + cls + '">' + arrow + ' XAUUSD: ' + bias + '</div>' +
+    '<div class="gd-drivers">' + bullHTML + bearHTML + '</div>' +
+    '<div class="gd-conf-wrap">' +
+      '<div class="gd-conf-label"><span>Confidence</span><span>' + conf + '% — ' + confLabel + '</span></div>' +
+      '<div class="gd-conf-track"><div class="gd-conf-fill" id="gd-conf-bar" style="width:0%"></div></div>' +
+    '</div>';
+
+  setTimeout(function() {
+    var bar = document.getElementById('gd-conf-bar');
+    if (bar) bar.style.width = conf + '%';
+  }, 80);
+
+  // Also populate execution section
+  _renderGoldExecution(bias, cls, arrow, setupType, entry, sl, tp, rr, conf, confLabel, bullDrivers, bearDrivers);
+}
+
+/* ─── 5. EXECUTION INSIGHT (called by bias engine) ──────────── */
+
+function _renderGoldExecution(bias, cls, arrow, setupType, entry, sl, tp, rr, conf, confLabel, bullDrivers, bearDrivers) {
+  var el = document.getElementById('gd-execution-wrap');
+  if (!el) return;
+
+  var reasonsHTML = bullDrivers.concat(bearDrivers).slice(0, 4)
+    .map(function(d) { return '<div style="font-size:12px;color:var(--t2);padding:3px 0">&#10003; ' + d + '</div>'; })
+    .join('');
+
+  el.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">' +
+      '<div class="gd-bias-badge ' + cls + '" style="margin-bottom:0">' + arrow + ' ' + (bias === 'BULLISH' ? 'BUY GOLD' : bias === 'BEARISH' ? 'SELL GOLD' : 'SIDELINES') + '</div>' +
+      '<div style="background:rgba(228,174,42,.1);border:1px solid rgba(228,174,42,.25);border-radius:8px;padding:6px 12px;font-size:11px;font-weight:800;color:var(--gold)">' + conf + '% ' + confLabel + '</div>' +
+    '</div>' +
+    '<div class="gd-exec-row"><div class="gd-exec-icon">&#128260;</div><div><div class="gd-exec-lbl">Setup Type</div><div class="gd-exec-val">' + setupType + '</div></div></div>' +
+    '<div class="gd-exec-row"><div class="gd-exec-icon">&#127919;</div><div><div class="gd-exec-lbl">Entry Condition</div><div class="gd-exec-val">' + entry + '</div></div></div>' +
+    '<div class="gd-exec-row"><div class="gd-exec-icon">&#128721;</div><div><div class="gd-exec-lbl">Stop Loss</div><div class="gd-exec-val">' + sl + '</div></div></div>' +
+    '<div class="gd-exec-row"><div class="gd-exec-icon">&#128176;</div><div><div class="gd-exec-lbl">Take Profit</div><div class="gd-exec-val">' + tp + '</div></div></div>' +
+    '<div class="gd-exec-row"><div class="gd-exec-icon">&#9889;</div><div><div class="gd-exec-lbl">Minimum R:R</div><div class="gd-exec-val">' + rr + '</div></div></div>' +
+    (reasonsHTML ? '<div style="margin-top:10px;padding:12px;background:var(--bg2);border-radius:10px;border:1px solid var(--bd)"><div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Bias Drivers</div>' + reasonsHTML + '</div>' : '');
+}
+
+/* ─── 2. WHY GOLD MOVED ──────────────────────────────────────── */
+
+function runWhyGoldMoved() {
+  var dir    = document.getElementById('gd-moved-direction')?.value;
+  var driver = document.getElementById('gd-moved-driver')?.value;
+
+  if (!dir || !driver) {
+    _toast('Please select both direction and driver.', 'warning');
+    return;
+  }
+
+  var explanation = (GOLD_WHY_MOVED[dir] && GOLD_WHY_MOVED[dir][driver])
+    ? GOLD_WHY_MOVED[dir][driver]
+    : 'No explanation available for this combination. Please verify your data and try again.';
+
+  var icon = dir === 'rallied' ? '&#8593;' : dir === 'sold-off' ? '&#8595;' : '&#8596;';
+  var dirColor = dir === 'rallied' ? '#00d4a1' : dir === 'sold-off' ? '#ff4560' : 'var(--gold)';
+
+  var el = document.getElementById('gd-moved-result');
+  el.style.display = 'block';
+  el.innerHTML =
+    '<div style="font-size:11px;font-weight:700;color:' + dirColor + ';text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px">' +
+      icon + ' Gold ' + (dir === 'sold-off' ? 'Sold Off' : dir.charAt(0).toUpperCase() + dir.slice(1)) + ' — ' + driver.toUpperCase() +
+    '</div>' +
+    '<div class="gd-moved-box">' + explanation + '</div>';
+}
+
+/* ─── 3. NEWS INTERPRETER ────────────────────────────────────── */
+
+function runGoldNewsInterpreter() {
+  var event   = document.getElementById('gd-news-event')?.value;
+  var outcome = document.getElementById('gd-news-outcome')?.value;
+
+  if (!event || !outcome) {
+    _toast('Please select both event and outcome.', 'warning');
+    return;
+  }
+
+  var logic = GOLD_NEWS_LOGIC[event] && GOLD_NEWS_LOGIC[event][outcome];
+
+  if (!logic) {
+    _toast('That combination is not applicable for this event type.', 'warning');
+    return;
+  }
+
+  var isBull = logic.bias === 'BULLISH';
+  var isBear = logic.bias === 'BEARISH';
+  var biasColor = isBull ? '#00d4a1' : isBear ? '#ff4560' : 'var(--gold)';
+  var biasArrow = isBull ? '&#8593;' : isBear ? '&#8595;' : '&#8594;';
+  var biasCls   = isBull ? 'bull' : isBear ? 'bear' : 'neut';
+
+  var el = document.getElementById('gd-news-result');
+  el.classList.add('show');
+  el.innerHTML =
+    '<div style="font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">' +
+      event.toUpperCase() + ' &mdash; ' + outcome + '</div>' +
+    '<div class="gd-bias-badge ' + biasCls + '" style="margin-bottom:12px">' + biasArrow + ' ' + logic.reaction + '</div>' +
+    '<div style="margin-bottom:12px">' +
+      '<div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Why?</div>' +
+      '<div class="gd-moved-box">' + logic.why + '</div>' +
+    '</div>' +
+    '<div>' +
+      '<div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">What traders expect</div>' +
+      '<div style="font-size:13px;color:var(--t1);line-height:1.6">' + logic.expect + '</div>' +
+    '</div>';
+}
+
+/* ─── 6. SESSION VOLATILITY TIMER ────────────────────────────── */
+
+function _renderGoldSessions() {
+  var el = document.getElementById('gd-sessions-wrap');
+  var adv = document.getElementById('gd-session-advice');
+  if (!el) return;
+
+  var now = new Date();
+  var utcH = now.getUTCHours() + now.getUTCMinutes() / 60;
+
+  var html = '';
+  var overlapActive = utcH >= 12 && utcH < 16;
+  var activeCount = 0;
+
+  GOLD_SESSIONS.forEach(function(s) {
+    var isOpen;
+    if (s.utcOpen < s.utcClose) {
+      isOpen = utcH >= s.utcOpen && utcH < s.utcClose;
+    } else {
+      isOpen = utcH >= s.utcOpen || utcH < s.utcClose;
+    }
+
+    var tag, tagCls;
+    if (s.tag === 'hottest' && isOpen) {
+      tag = '&#128293; Hottest — Trade Now'; tagCls = 'hot';
+    } else if (s.tag === 'hottest' && !isOpen) {
+      tag = 'Not active'; tagCls = 'closed';
+    } else if (isOpen) {
+      tag = s.tag === 'high' ? 'Open &#10003;' : 'Open (low vol)'; tagCls = 'open';
+      activeCount++;
+    } else {
+      tag = 'Closed'; tagCls = 'closed';
+    }
+
+    html +=
+      '<div class="gd-session-row">' +
+        '<div>' +
+          '<div class="gd-session-name">' + s.name + '</div>' +
+          '<div class="gd-session-time">' + s.time + ' &mdash; ' + s.note + '</div>' +
+        '</div>' +
+        '<span class="gd-session-tag ' + tagCls + '">' + tag + '</span>' +
+      '</div>';
+  });
+
+  el.innerHTML = html;
+
+  if (adv) {
+    if (overlapActive) {
+      adv.innerHTML = '<span style="color:var(--gold);font-weight:700">&#128293; London/NY overlap is active — highest gold volatility now. Best window to trade XAUUSD.</span>';
+    } else if (activeCount > 0) {
+      adv.innerHTML = '<span style="color:#00d4a1">Sessions are open. Moderate trading conditions.</span>';
+    } else {
+      adv.innerHTML = '<span style="color:var(--t2)">No major sessions open. Low volatility expected. Prepare for London open.</span>';
+    }
+  }
+}
+
+/* ─── GOLD PAGE INIT (called by goPage) ──────────────────────── */
+
+function _initGoldPage() {
+  _renderGoldSessions();
+  // Refresh sessions every 60 seconds while on page
+  if (window._goldSessionInterval) clearInterval(window._goldSessionInterval);
+  window._goldSessionInterval = setInterval(_renderGoldSessions, 60000);
+}
+
 /* ═══════════════════════════════════════════════════════════
    SESSION 3 — TRADE EXECUTION INSIGHT ENGINE
    ═══════════════════════════════════════════════════════════ */
