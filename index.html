@@ -2,13 +2,26 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover"/>
   <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
   <script>
+    // Service Worker & Cache cleanup on load
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(function(regs) { regs.forEach(function(r) { r.unregister(); }); });
-      if (window.caches) caches.keys().then(function(keys) { keys.forEach(function(k) { caches.delete(k); }); });
+      navigator.serviceWorker.getRegistrations().then(function(regs) {
+        regs.forEach(function(r) { r.unregister().catch(function(){}); });
+      }).catch(function(){});
+      if (window.caches) {
+        caches.keys().then(function(keys) {
+          keys.forEach(function(k) { caches.delete(k).catch(function(){}); });
+        }).catch(function(){});
+      }
     }
+    // Theme persistence
+    (function(){
+      var t = localStorage.getItem('tes_theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
   </script>
   <title>TES Pro — Trading Execution System</title>
   <meta name="theme-color" content="#080c14"/>
@@ -16,7 +29,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-  <script>(function(){var t=localStorage.getItem('tes_theme')||'dark';document.documentElement.setAttribute('data-theme',t);})();</script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
   <style>
   :root, [data-theme="dark"] {
     --bg: #080c14; --bg1: #0c1120; --bg2: #10172a; --bg3: #141e33; --bg4: #1c2840;
@@ -43,7 +56,7 @@
   button,input,select,textarea{font-family:inherit;font-size:14px}
   ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
   #screen-splash,#screen-auth,#screen-locked,#screen-app{display:none}
-  #screen-splash{align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:18px;background:var(--bg)}
+  #screen-splash{display:none;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:18px;background:var(--bg)}
   .splash-logo{font-size:58px;font-weight:900;color:var(--gold);letter-spacing:-3px;text-shadow:0 0 40px rgba(228,174,42,.35)}
   .splash-spinner{width:28px;height:28px;border:2.5px solid var(--bg4);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
@@ -88,7 +101,7 @@
   .btn-paystack.annual:hover{background:#009a8e}
   #locked-email{font-size:11px;color:var(--t3);margin-top:12px}
   .btn-text-sm{background:transparent;border:none;cursor:pointer;color:var(--t2);font-size:12px;text-decoration:underline;margin-top:8px;padding:4px}
-  #screen-app{min-height:100vh;flex-direction:column}
+  #screen-app{display:flex;flex-direction:column;min-height:100vh}
   .topbar{position:sticky;top:0;z-index:50;height:var(--topbar);background:rgba(8,12,20,.96);backdrop-filter:blur(12px);border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;padding:0 16px;}
   [data-theme="light"] .topbar{background:rgba(240,244,255,.96)}
   .tb-logo{font-size:20px;font-weight:900;color:var(--gold);letter-spacing:-1px}
@@ -100,7 +113,7 @@
   .tb-logout{background:transparent;border:1px solid var(--bd);color:var(--t2);font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;cursor:pointer;transition:all .2s}
   .tb-logout:hover{border-color:var(--red);color:var(--red)}
   .btn-theme{background:transparent;border:1px solid var(--bd);color:var(--t2);font-size:16px;padding:5px 9px;border-radius:6px;cursor:pointer;line-height:1;display:flex;align-items:center}
-  .app-body{max-width:660px;margin:0 auto;padding:20px 16px;padding-bottom:calc(var(--nav) + 20px)}
+  .app-body{flex:1;max-width:660px;margin:0 auto;width:100%;padding:20px 16px;padding-bottom:calc(var(--nav) + 20px)}
   .page{display:none;animation:fadeUp .3s ease}
   .page.active{display:block}
   .sec-lbl{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1.5px;margin:22px 0 10px}
@@ -109,12 +122,6 @@
   .quote-card{background:var(--bg3);border:1px solid var(--bd2);border-radius:16px;padding:16px 18px;margin-bottom:14px;font-size:14px;line-height:1.6;color:var(--t2);font-style:italic;}
   .quote-card em{color:var(--gold);font-style:italic;font-weight:600}
   .quote-author{color:var(--t3);font-size:12px;margin-top:4px;font-style:normal}
-  .streak-card{background:var(--bg3);border:2px solid var(--gold);border-radius:16px;padding:16px 20px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;}
-  .streak-left{display:flex;align-items:center;gap:12px}
-  .streak-icon{font-size:28px}
-  .streak-num{font-size:36px;font-weight:900;color:var(--gold);line-height:1}
-  .streak-label{font-size:12px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;margin-top:2px}
-  .streak-msg{font-size:13px;color:var(--t2);text-align:right;line-height:1.4;max-width:140px}
   .home-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
   .home-stat-card{background:var(--bg2);border:1px solid var(--bd);border-radius:14px;padding:14px 12px;text-align:center}
   .home-stat-val{font-size:28px;font-weight:900;color:var(--gold);letter-spacing:-1px;line-height:1}
@@ -211,7 +218,7 @@
   .cfs-field select{width:100%;background:var(--bg1);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;color:var(--t1);outline:none;font-size:12px;-webkit-appearance:none;appearance:none;cursor:pointer;}
   .cfs-field select:focus{border-color:var(--gold)}
   .cfs-field select option{background:var(--bg2)}
-  .btn-calc{width:100%;padding:13px;background:var(--gold);color:#000;border:none;border-radius:12px;font-size:14px;font-weight:800;cursor:pointer;transition:all .2s;margin-top:4px;margin-bottom:14px;}
+  .btn-calc{width:100%;padding:13px;background:var(--gold);color:#000;border:none;border-radius:12px;font-size:14px;font-weight:800;cursor:pointer;transition:all .2s;margin-bottom:14px;}
   .btn-calc:hover{background:var(--gold-lt);transform:translateY(-1px)}
   .cs-table-wrap{overflow-x:auto;margin-top:4px}
   .cs-table{width:100%;border-collapse:collapse;font-size:13px}
@@ -253,7 +260,7 @@
   .nav-btn.active svg{filter:drop-shadow(0 0 4px rgba(228,174,42,.5))}
   @media(max-width:420px){.stats-grid{grid-template-columns:repeat(3,1fr)}.jf-row3{grid-template-columns:1fr 1fr}.cfs-grid{grid-template-columns:1fr}.rc-grid{grid-template-columns:1fr}#tb-email{display:none}.home-stats{gap:8px}.home-stat-val{font-size:24px}}
   @media(min-width:600px){.an-grid{grid-template-columns:repeat(4,1fr)}.cfs-grid{grid-template-columns:repeat(4,1fr)}}
-  /* Gold Desk styles */
+  /* Gold Desk */
   .gold-page-header{padding-top:8px;margin-bottom:20px}
   .gold-page-title{font-size:26px;font-weight:900;letter-spacing:-.5px;color:var(--gold)}
   .gold-page-sub{font-size:13px;color:var(--t2);margin-top:4px}
@@ -295,7 +302,7 @@
 </head>
 <body>
 
-<div id="screen-splash">
+<div id="screen-splash" style="display:flex;">
   <div class="splash-logo">TES</div>
   <div class="splash-spinner"></div>
   <div class="splash-sub">Loading your session…</div>
@@ -307,8 +314,8 @@
     <div class="auth-tagline">Institutional trading discipline. Your edge.</div>
     <div class="auth-card">
       <div class="auth-tabs">
-        <button class="atab active" onclick="authTab('login',this)">Sign In</button>
-        <button class="atab" onclick="authTab('signup',this)">Create Account</button>
+        <button class="atab active" onclick="authTab('login', this)">Sign In</button>
+        <button class="atab" onclick="authTab('signup', this)">Create Account</button>
       </div>
       <div id="auth-login" class="auth-panel active">
         <div class="fg"><label>Email</label><input id="l-email" type="email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')doLogin()"/></div>
@@ -357,9 +364,9 @@
     <div class="tb-logo">TES<span class="tb-pro">PRO</span></div>
     <div class="tb-right">
       <span id="tb-days" style="display:none"></span>
-      <button id="btn-renew" onclick="goPage('dashboard');setTimeout(()=>document.getElementById('cs-section').scrollIntoView(),200)">Renew</button>
+      <button id="btn-renew" onclick="goPage('macro')">Renew</button>
       <span id="tb-email"></span>
-      <button class="btn-theme" onclick="toggleTheme()" title="Toggle theme" id="theme-toggle-btn">🌙</button>
+      <button class="btn-theme" onclick="toggleTheme()" title="Toggle theme">🌙</button>
       <button class="tb-logout" onclick="doLogout()">Logout</button>
     </div>
   </div>
@@ -367,13 +374,12 @@
   <div class="app-body">
     <!-- DASHBOARD -->
     <div class="page active" id="page-dashboard">
-      <div class="quote-card"><span id="dash-quote">"Do not focus on making money; focus on <em>protecting what you have.</em>"</span><div class="quote-author" id="dash-quote-author">— Paul Tudor Jones</div></div>
-      <div class="streak-card"><div class="streak-left"><div class="streak-icon">🔥</div><div><div class="streak-num" id="streak-num">1</div><div class="streak-label">Day Streak</div></div></div><div class="streak-msg" id="streak-msg">Complete a checklist today!</div></div>
-      <div class="home-stats"><div class="home-stat-card"><div class="home-stat-val" id="hstat-trades">—</div><div class="home-stat-key">Trades</div></div><div class="home-stat-card"><div class="home-stat-val" id="hstat-wr">—</div><div class="home-stat-key">Win Rate</div></div><div class="home-stat-card"><div class="home-stat-val" id="hstat-rr">—</div><div class="home-stat-key">Avg R:R</div></div></div>
-      <div class="bias-summary-card"><div class="bias-summary-header"><div class="bias-summary-title">Weekly Bias</div><div class="bias-active-badge">Active</div></div><div class="bias-chips" id="dash-bias-chips"><div class="bias-chip neu" style="font-size:11px;color:var(--t3);border-color:var(--bd)">Set bias in Macro Bias →</div></div></div>
+      <div class="quote-card"><span id="dash-quote">"Do not focus on making money; focus on <em>protecting what you have.</em>"</span><div class="quote-author">— Paul Tudor Jones</div></div>
+      <div class="home-stats"><div class="home-stat-card"><div class="home-stat-val" id="stat-total">—</div><div class="home-stat-key">Trades</div></div><div class="home-stat-card"><div class="home-stat-val" id="stat-wr">—</div><div class="home-stat-key">Win Rate</div></div><div class="home-stat-card"><div class="home-stat-val" id="stat-netr">—</div><div class="home-stat-key">Net R</div></div></div>
+      <div class="bias-summary-card"><div class="bias-summary-header"><div class="bias-summary-title">Weekly Bias</div><div class="bias-active-badge">Active</div></div><div class="bias-chips" id="dash-bias-chips"><div class="bias-chip neu" style="font-size:11px;color:var(--t3);border-color:var(--bd)">Set bias in Macro →</div></div></div>
       <div class="card" id="session-timer-card" style="margin-bottom:16px;padding:16px"><p style="color:var(--t3);font-size:13px">Loading session times…</p></div>
       <div class="sec-lbl">Quick Access</div>
-      <div class="quick-grid"><button class="quick-btn" onclick="goPage('checklist')"><div class="quick-icon green">✔️</div><div><div class="quick-label">Pre-Trade</div><div class="quick-sub">Checklist</div></div></button><button class="quick-btn" onclick="goPage('journal');setTimeout(()=>{const f=document.getElementById('trade-form-wrap');const b=document.getElementById('btn-jform');if(f&&f.style.display!=='block'){f.style.display='block';if(b)b.textContent='× Close';f.scrollIntoView({behavior:'smooth'});}},300)"><div class="quick-icon gray">📓</div><div><div class="quick-label">Log Trade</div><div class="quick-sub">Journal</div></div></button><button class="quick-btn" onclick="goPage('macro')"><div class="quick-icon blue">🌐</div><div><div class="quick-label">Macro Bias</div><div class="quick-sub">Fundamentals</div></div></button><button class="quick-btn" onclick="goPage('analytics')"><div class="quick-icon purple">🎯</div><div><div class="quick-label">Analytics</div><div class="quick-sub">Performance</div></div></button></div>
+      <div class="quick-grid"><button class="quick-btn" onclick="goPage('checklist')"><div class="quick-icon green">✔️</div><div><div class="quick-label">Pre-Trade</div><div class="quick-sub">Checklist</div></div></button><button class="quick-btn" onclick="goPage('journal'); setTimeout(function(){showTradeForm();},300)"><div class="quick-icon gray">📓</div><div><div class="quick-label">Log Trade</div><div class="quick-sub">Journal</div></div></button><button class="quick-btn" onclick="goPage('macro')"><div class="quick-icon blue">🌐</div><div><div class="quick-label">Macro Bias</div><div class="quick-sub">Fundamentals</div></div></button><button class="quick-btn" onclick="goPage('analytics')"><div class="quick-icon purple">🎯</div><div><div class="quick-label">Analytics</div><div class="quick-sub">Performance</div></div></button></div>
       <div class="recent-header"><div class="recent-title">Recent Trades</div><button class="view-all-btn" onclick="goPage('journal')">View All →</button></div>
       <div id="home-recent-trades"><p style="color:var(--t3);font-size:13px;padding:8px 0">No trades logged yet.</p></div>
     </div>
@@ -422,10 +428,7 @@
     <!-- ANALYTICS -->
     <div class="page" id="page-analytics">
       <div class="ph"><div><h1>Performance</h1><p class="ph-sub">Your trading analytics</p></div></div>
-      <div class="an-grid"><div class="an-card"><div class="an-val c-green" id="an-wins">0</div><div class="an-lbl">Wins</div></div><div class="an-card"><div class="an-val c-red" id="an-losses">0</div><div class="an-lbl">Losses</div></div><div class="an-card"><div class="an-val c-gold" id="an-rr">0.0</div><div class="an-lbl">Avg R:R</div></div><div class="an-card"><div class="an-val" id="an-wr">0%</div><div class="an-lbl">Win Rate</div></div></div>
-      <div class="chart-wrap"><div class="chart-lbl">Equity Curve (R multiples)</div><div class="chart-box"><canvas id="eq-chart"></canvas></div></div>
-      <div class="chart-wrap"><div class="chart-lbl">Win / Loss / BE Distribution</div><div class="chart-box" style="height:190px"><canvas id="dist-chart"></canvas></div></div>
-      <div class="card"><div class="card-title">Session Breakdown</div><div id="session-stats" style="font-size:13px;color:var(--t2)">Log trades with sessions selected to see breakdown.</div></div>
+      <div class="an-grid"><div class="an-card"><div class="an-val c-green" id="stat-wins">0</div><div class="an-lbl">Wins</div></div><div class="an-card"><div class="an-val c-red" id="stat-losses">0</div><div class="an-lbl">Losses</div></div><div class="an-card"><div class="an-val c-gold" id="an-rr">0.0</div><div class="an-lbl">Avg R:R</div></div><div class="an-card"><div class="an-val" id="stat-wr">0%</div><div class="an-lbl">Win Rate</div></div></div>
       <div class="card" style="margin-top:14px;padding:16px" id="trade-review-card"><p style="color:var(--t3);font-size:13px">Log at least 3 trades to unlock your coaching note.</p></div>
     </div>
 
@@ -451,7 +454,7 @@
       </div>
     </div>
 
-    <!-- ========== GOLD DESK (CORRECTLY PLACED AS SIBLING) ========== -->
+    <!-- GOLD DESK -->
     <div class="page" id="page-gold">
       <div class="gold-page-header">
         <div class="gold-page-title">⭐ TES Gold Desk</div>
@@ -515,14 +518,13 @@
     </div>
   </div>
 
-  <!-- BOTTOM NAVIGATION with Gold button -->
+  <!-- BOTTOM NAV -->
   <nav class="bottom-nav">
     <button class="nav-btn active" data-page="dashboard" onclick="goPage('dashboard')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Home</button>
     <button class="nav-btn" data-page="checklist" onclick="goPage('checklist')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Checklist</button>
     <button class="nav-btn" data-page="journal" onclick="goPage('journal')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>Journal</button>
     <button class="nav-btn" data-page="analytics" onclick="goPage('analytics')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Analytics</button>
     <button class="nav-btn" data-page="macro" onclick="goPage('macro')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/></svg>Macro</button>
-    <!-- Gold button added here -->
     <button class="nav-btn" data-page="gold" onclick="goPage('gold')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 15 9 22 9 16 14 19 22 12 17 5 22 8 14 2 9 9 9 12 2"/></svg>Gold</button>
     <button class="nav-btn" data-page="settings" onclick="goPage('settings')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Settings</button>
   </nav>
@@ -533,137 +535,5 @@
 <script src="firebase.js"></script>
 <script src="app.js"></script>
 
-<script>
-// ==================== GOLD DESK FUNCTIONS (inline so they work immediately) ====================
-window.runGoldBiasEngine = function() {
-  const usd = document.getElementById('gd-usd-strength').value;
-  const yields = document.getElementById('gd-yields').value;
-  const fed = document.getElementById('gd-fed').value;
-  const risk = document.getElementById('gd-risk').value;
-  const inflation = document.getElementById('gd-inflation').value;
-
-  let score = 0;
-  if (usd === 'weak') score += 1;
-  else if (usd === 'strong') score -= 1;
-  if (yields === 'falling') score += 1;
-  else if (yields === 'rising') score -= 1;
-  if (fed === 'dovish') score += 1;
-  else if (fed === 'hawkish') score -= 1;
-  if (risk === 'risk-off') score += 1;
-  else if (risk === 'risk-on') score -= 1;
-  if (inflation === 'rising') score -= 1;
-  else if (inflation === 'falling') score += 1;
-
-  let bias, confidence;
-  if (score >= 2) { bias = 'BULLISH'; confidence = 70 + (score * 5); }
-  else if (score <= -2) { bias = 'BEARISH'; confidence = 70 + (Math.abs(score) * 5); }
-  else { bias = 'NEUTRAL'; confidence = 50 + (Math.abs(score) * 10); }
-  confidence = Math.min(98, Math.max(30, confidence));
-
-  const resultDiv = document.getElementById('gd-bias-result');
-  resultDiv.style.display = 'block';
-  resultDiv.innerHTML = `<div class="gd-bias-badge ${bias.toLowerCase()}">${bias} — ${Math.round(confidence)}% confidence</div>
-                         <div class="gd-conf-wrap"><div class="gd-conf-label"><span>Confidence</span><span>${Math.round(confidence)}%</span></div>
-                         <div class="gd-conf-track"><div class="gd-conf-fill" style="width:${confidence}%"></div></div></div>
-                         <div style="font-size:12px;color:var(--t2);margin-top:12px">Macro score: ${score > 0 ? '+' : ''}${score}</div>`;
-
-  // Update execution insight
-  let execHtml = '';
-  if (bias === 'BULLISH') {
-    execHtml = `<div class="gd-exec-row"><div class="gd-exec-icon">📈</div><div><div class="gd-exec-lbl">Entry Zone</div><div class="gd-exec-val">$2330 – $2345</div></div></div>
-                <div class="gd-exec-row"><div class="gd-exec-icon">🛑</div><div><div class="gd-exec-lbl">Stop Loss</div><div class="gd-exec-val">$2315</div></div></div>
-                <div class="gd-exec-row"><div class="gd-exec-icon">🎯</div><div><div class="gd-exec-lbl">Take Profit</div><div class="gd-exec-val">$2380 (TP1) | $2420 (TP2)</div></div></div>
-                <div class="gd-exec-row"><div class="gd-exec-icon">⚖️</div><div><div class="gd-exec-lbl">Risk:Reward</div><div class="gd-exec-val">2.8 : 1</div></div></div>`;
-  } else if (bias === 'BEARISH') {
-    execHtml = `<div class="gd-exec-row"><div class="gd-exec-icon">📉</div><div><div class="gd-exec-lbl">Entry Zone</div><div class="gd-exec-val">$2360 – $2375</div></div></div>
-                <div class="gd-exec-row"><div class="gd-exec-icon">🛑</div><div><div class="gd-exec-lbl">Stop Loss</div><div class="gd-exec-val">$2390</div></div></div>
-                <div class="gd-exec-row"><div class="gd-exec-icon">🎯</div><div><div class="gd-exec-lbl">Take Profit</div><div class="gd-exec-val">$2320 (TP1) | $2280 (TP2)</div></div></div>
-                <div class="gd-exec-row"><div class="gd-exec-icon">⚖️</div><div><div class="gd-exec-lbl">Risk:Reward</div><div class="gd-exec-val">2.5 : 1</div></div></div>`;
-  } else {
-    execHtml = `<div class="gd-exec-row"><div class="gd-exec-icon">⏸️</div><div><div class="gd-exec-lbl">Recommendation</div><div class="gd-exec-val">Wait for breakout of $2310–$2380 range. Reduce position size.</div></div></div>`;
-  }
-  document.getElementById('gd-execution-wrap').innerHTML = execHtml;
-};
-
-window.runWhyGoldMoved = function() {
-  const direction = document.getElementById('gd-moved-direction').value;
-  const driver = document.getElementById('gd-moved-driver').value;
-  if (!direction || !driver) { alert('Please select both direction and driver'); return; }
-
-  const narratives = {
-    rallied: { cpi: 'Gold rallied today after softer CPI data (3.4% vs 3.5% expected), increasing rate‑cut bets.', nfp: 'NFP miss (125k vs 185k) weakened USD, sending gold higher.', fomc: 'Fed’s dovish tilt — Powell signals cuts possible — gold surged.', geopolitical: 'Escalation in Middle East drove safe‑haven flows into gold.', yields: '10‑year yields dropped 12bps, lowering gold’s opportunity cost.', usd: 'DXY fell 0.6% after weak services PMI, lifting gold.' },
-    'sold-off': { cpi: 'Hot CPI (3.6% vs 3.4%) crushed rate‑cut hopes; gold dumped 2.5%.', nfp: 'Strong NFP (275k) boosted USD; gold sold off sharply.', fomc: 'Hawkish pause — higher‑for‑longer — gold reversed lower.', geopolitical: 'Ceasefire talks advanced, reducing risk premium in gold.', yields: 'Real yields spiked 15bps; gold collapsed.', usd: 'DXY surge to 105.50 triggered heavy gold liquidation.' },
-    ranging: { cpi: 'CPI inline; gold trapped in narrow range awaiting next catalyst.', nfp: 'NFP mixed revisions; gold directionless.', fomc: 'Fed delivered no surprises; gold consolidates.', geopolitical: 'No escalation, no de‑escalation; gold choppy.', yields: 'Yields flat week‑on‑week; gold range‑bound.', usd: 'DXY oscillates ±0.1%; gold stuck.' }
-  };
-  const narrative = narratives[direction]?.[driver] || 'No narrative available for that combination.';
-  const resultDiv = document.getElementById('gd-moved-result');
-  resultDiv.style.display = 'block';
-  resultDiv.innerHTML = `<div class="gd-moved-box">${narrative}</div>`;
-};
-
-window.runGoldNewsInterpreter = function() {
-  const event = document.getElementById('gd-news-event').value;
-  const outcome = document.getElementById('gd-news-outcome').value;
-  if (!event || !outcome) { alert('Please select both event and outcome'); return; }
-
-  const reactions = {
-    cpi: { better: 'BEARISH: Hot inflation → more Fed hikes → gold down', worse: 'BULLISH: Soft CPI → rate‑cut hopes → gold up', inline: 'NEUTRAL: No surprise, gold follows broader USD move' },
-    nfp: { better: 'BEARISH: Strong jobs → USD up → gold down', worse: 'BULLISH: Weak labour market → dovish Fed → gold up', inline: 'NEUTRAL: Gold trades on other factors' },
-    fomc: { hike: 'BEARISH: Immediate USD spike, gold drops', hold: 'SLIGHTLY BULLISH: Pause confirmed, gold may rally', cut: 'VERY BULLISH: Gold explodes higher' },
-    employment: { better: 'BEARISH: Strong hiring → USD up', worse: 'BULLISH: Weak jobs → gold up', inline: 'NEUTRAL' },
-    gdp: { better: 'BEARISH: Strong growth → hawkish bias', worse: 'BULLISH: Weak growth → cuts expected', inline: 'NEUTRAL' }
-  };
-  let interpretation = reactions[event]?.[outcome];
-  if (!interpretation) interpretation = 'Unknown combination. Check your selections.';
-
-  const resultDiv = document.getElementById('gd-news-result');
-  resultDiv.classList.add('show');
-  resultDiv.innerHTML = `<strong style="color:var(--gold)">Gold Reaction:</strong> ${interpretation}`;
-};
-
-// Session timer for gold page
-function _renderGoldSessions() {
-  const container = document.getElementById('gd-sessions-wrap');
-  if (!container) return;
-  const now = new Date();
-  const utcHour = now.getUTCHours();
-  const utcMin = now.getUTCMinutes();
-  const sessions = [
-    { name: 'Asia (Tokyo)', utcOpen: 0, utcClose: 8, vol: 'Moderate' },
-    { name: 'London', utcOpen: 8, utcClose: 16, vol: 'High' },
-    { name: 'New York', utcOpen: 13, utcClose: 22, vol: 'High' },
-    { name: 'Sydney', utcOpen: 22, utcClose: 6, nextDay: true, vol: 'Low' }
-  ];
-  let html = '';
-  sessions.forEach(s => {
-    let isOpen = false;
-    if (s.nextDay) isOpen = (utcHour >= s.utcOpen || utcHour < s.utcClose);
-    else isOpen = (utcHour >= s.utcOpen && utcHour < s.utcClose);
-    const statusClass = isOpen ? 'open' : 'closed';
-    const statusText = isOpen ? 'OPEN' : 'CLOSED';
-    html += `<div class="gd-session-row">
-              <div><span class="gd-session-name">${s.name}</span><div class="gd-session-time">${s.utcOpen}:00 – ${s.utcClose}:00 UTC</div></div>
-              <div><span class="gd-session-tag ${statusClass}">${statusText}</span><span class="gd-session-tag hot" style="margin-left:6px">Vol: ${s.vol}</span></div>
-            </div>`;
-  });
-  container.innerHTML = html;
-  const advice = document.getElementById('gd-session-advice');
-  if (advice) advice.innerHTML = '💡 Best liquidity: London open (8:00 UTC) and NY open (13:00 UTC)';
-}
-
-window._initGoldPage = function() {
-  runGoldBiasEngine();
-  _renderGoldSessions();
-  if (window.goldSessionInterval) clearInterval(window.goldSessionInterval);
-  window.goldSessionInterval = setInterval(_renderGoldSessions, 60000);
-};
-
-// Override goPage to call gold initializer
-const originalGoPage = window.goPage;
-window.goPage = function(pageId) {
-  if (originalGoPage) originalGoPage(pageId);
-  if (pageId === 'gold' && typeof _initGoldPage === 'function') _initGoldPage();
-};
-</script>
 </body>
 </html>
