@@ -1,26 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
-   app.js — TES Pro (Final Upgrade)
-   ───────────────────────────────────────────────────────────
-   BUGS FIXED FROM ORIGINAL:
-   [B1] Removed setTimeout that overrode screen routing at 1500ms
-   [B2] Removed duplicate doLogin() (was defined twice)
-   [B3] Added missing doLogout()
-   [B4] show() now hides screen-splash too
-   [B5] No more location.reload() — grantAccess() handles routing
-   [B6] All alert() replaced with _toast() / _showErr()
-   [B7] Subscription now stored as { status, plan, expiresAt }
-
-   NEW FEATURES:
-   [N1] Paystack: pk_test_ → simulate, pk_live_ → real popup
-   [N2] onPaymentSuccess(plan) — single callback for all payment paths
-   [N3] Subscription expiry check on every login
-   [N4] Days remaining in topbar + renew button
-   [N5] calculateCurrencyScore(Hata) — automatic scoring engine
-   [N6] runCurrencyAnalysis() — computes + ranks all 8 currencies
-   [N7] renderCurrencyTable(rankings) — dynamic strength table
-   [N8] renderTradeSuggestions(rankings) — top 3 BUY/SELL ideas
-   [N9] calcRisk() — full risk calculator, live via input events
-   [N10] No NaN guards throughout
+   app.js — TES Pro (Session 4 - Complete Revision)
+   Production-grade trading system with all fixes and missing functions
    ═══════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -31,7 +11,6 @@ const SUB_MS = {
   annual:  365 * 24 * 60 * 60 * 1000
 };
 
-// Tradeable pairs we suggest (base + quote)
 const TRADE_PAIRS = [
   ['GBP','JPY'],['EUR','JPY'],['AUD','JPY'],['USD','JPY'],
   ['GBP','USD'],['EUR','USD'],['AUD','USD'],['NZD','USD'],
@@ -46,13 +25,15 @@ const S = {
   trades:       [],
   outcome:      '',
   unsubTrades:  null,
-  // Stores last computed currency rankings for suggestions
   rankings:     []
 };
 
+/* ─── TIMER CLEANUP ───────────────────────────────────────── */
+let _sessionTimerInterval = null;
+let _goldSessionInterval = null;
+
 /* ═══════════════════════════════════════════════════════════
    SCREEN CONTROL
-   FIX [B4]: includes screen-splash so it always hides cleanly
    ═══════════════════════════════════════════════════════════ */
 function show(id) {
   ['screen-splash', 'screen-auth', 'screen-locked', 'screen-app'].forEach(sid => {
@@ -60,13 +41,40 @@ function show(id) {
     if (el) el.style.display = 'none';
   });
   const target = document.getElementById(id);
-  if (target) target.style.display = 'block';
+  if (target) target.style.display = id === 'screen-splash' ? 'flex' : 'block';
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PAGE NAVIGATION
+   ═══════════════════════════════════════════════════════════ */
+function goPage(pageId) {
+  const pages = document.querySelectorAll('.page');
+  const navBtns = document.querySelectorAll('.nav-btn');
+  
+  pages.forEach(p => p.classList.remove('active'));
+  navBtns.forEach(b => b.classList.remove('active'));
+  
+  const page = document.getElementById('page-' + pageId);
+  const btn = document.querySelector('[data-page="' + pageId + '"]');
+  
+  if (page) page.classList.add('active');
+  if (btn) btn.classList.add('active');
+  
+  // Page-specific initialization
+  if (pageId === 'dashboard') {
+    _updateDashboardStats();
+    _startSessionTimer();
+  }
+  if (pageId === 'analytics') {
+    renderTradeReview();
+  }
+  if (pageId === 'gold') {
+    _initGoldPage();
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════
    BOOT — Firebase auth observer
-   FIX [B1]: removed the 1500ms setTimeout that was overriding
-   bootUser() routing. Splash stays up while Firebase resolves.
    ═══════════════════════════════════════════════════════════ */
 (function boot() {
   if (!_auth) {
@@ -75,7 +83,7 @@ function show(id) {
     return;
   }
 
-  show('screen-splash'); // Hold splash until auth resolves
+  show('screen-splash');
 
   _auth.onAuthStateChanged(async user => {
     if (user) {
@@ -91,23 +99,34 @@ function show(id) {
 })();
 
 /* ═══════════════════════════════════════════════════════════
-   BOOT USER — access control
-   FIX [B7]: reads subscription object { status, plan, expiresAt }
-   instead of a raw 'paid' string. Checks expiry on every login.
+   SUBSCRIPTION HELPERS
    ═══════════════════════════════════════════════════════════ */
-
-/* ─── SUBSCRIPTION HELPERS ────────────────────────────────── */
-// [CLOUD SYNC] localStorage as offline cache fallback only
 function _subRead(uid) {
   try { return JSON.parse(localStorage.getItem('tes_sub_' + uid)); }
   catch { return null; }
 }
 
 function _subWrite(uid, sub) {
-  localStorage.setItem('tes_sub_' + uid, JSON.stringify(sub));
+  try { localStorage.setItem('tes_sub_' + uid, JSON.stringify(sub)); }
+  catch { console.warn('[TES] localStorage write failed'); }
 }
 
-// [CLOUD SYNC] Write subscription to Firestore (source of truth)
+async function _subReadCloud(uid) {
+  if (!_db) return null;
+  try {
+    const doc = await _db.collection('users').doc(uid).get();
+    if (doc.exists && doc.data().subscription) {
+      const sub = doc.data().subscription;
+      _subWrite(uid, sub);
+      return sub;
+    }
+    return null;
+  } catch (e) {
+    console.warn('[TES] Cloud read failed:', e.message);
+    return null;
+  }
+}
+
 async function _subWriteCloud(uid, sub) {
   if (!_db) return;
   try {
@@ -122,39 +141,20 @@ async function _subWriteCloud(uid, sub) {
   }
 }
 
-// [CLOUD SYNC] Read subscription from Firestore (source of truth)
-async function _subReadCloud(uid) {
-  if (!_db) return null;
-  try {
-    const doc = await _db.collection('users').doc(uid).get();
-    if (doc.exists && doc.data().subscription) {
-      const sub = doc.data().subscription;
-      _subWrite(uid, sub); // cache locally
-      return sub;
-    }
-    return null;
-  } catch (e) {
-    console.warn('[TES] Cloud read failed, falling back to localStorage:', e.message);
-    return null;
-  }
-}
-
 /* ═══════════════════════════════════════════════════════════
-   onPaymentSuccess — single entry point called by ALL payment
-   paths (real Paystack callback and test simulation).
-   [N2] Stores { status, plan, expiresAt } — not a raw string.
+   PAYMENT & SUBSCRIPTION
    ═══════════════════════════════════════════════════════════ */
 function onPaymentSuccess(plan) {
   if (!S.user) return;
 
   const sub = {
     status:    'active',
-    plan:      plan,                           // 'monthly' or 'annual'
-    expiresAt: Date.now() + SUB_MS[plan]       // exact expiry timestamp
+    plan:      plan,
+    expiresAt: Date.now() + SUB_MS[plan]
   };
 
-  _subWrite(S.user.uid, sub);          // cache locally
-  _subWriteCloud(S.user.uid, sub);     // [CLOUD SYNC] save to Firestore
+  _subWrite(S.user.uid, sub);
+  _subWriteCloud(S.user.uid, sub);
 
   S.profile = {
     uid:           S.user.uid,
@@ -169,11 +169,6 @@ function onPaymentSuccess(plan) {
   _launchApp();
 }
 
-/* ══════════════════════════════════════════════
-   PAYSTACK — SECURE FLOW
-   callback → verifyPaystackPayment (backend) → grantAccess
-   Secret key NEVER touches frontend.
-══════════════════════════════════════════════ */
 function initiatePaystack(plan) {
   plan = plan || 'monthly';
   if (!S.user) { _toast('Please sign in first.', 'error'); return; }
@@ -185,22 +180,24 @@ function initiatePaystack(plan) {
   const kobo   = Math.round(usd * rate * 120);
 
   const openPopup = () => {
-    PaystackPop.setup({
-      key,
-      email:    S.user.email,
-      amount:   kobo,
-      currency: 'NGN',
-      ref:      'TES_' + S.user.uid + '_' + Date.now(),
-      metadata: { uid: S.user.uid, plan },
-
-      // SECURE: reference goes to backend — never directly grants access
-      callback: (response) => {
-        _toast('Verifying payment…', 'warning');
-        _verifyPayment(response.reference, plan);
-      },
-
-      onClose: () => _toast('Payment window closed.', 'warning')
-    }).openIframe();
+    try {
+      PaystackPop.setup({
+        key,
+        email:    S.user.email,
+        amount:   kobo,
+        currency: 'NGN',
+        ref:      'TES_' + S.user.uid + '_' + Date.now(),
+        metadata: { uid: S.user.uid, plan },
+        callback: (response) => {
+          _toast('Verifying payment…', 'warning');
+          _verifyPayment(response.reference, plan);
+        },
+        onClose: () => _toast('Payment window closed.', 'warning')
+      }).openIframe();
+    } catch (e) {
+      console.error('[TES] Paystack setup failed:', e);
+      _toast('Payment popup error. Check connection.', 'error');
+    }
   };
 
   if (typeof PaystackPop !== 'undefined') { openPopup(); return; }
@@ -212,8 +209,6 @@ function initiatePaystack(plan) {
   document.head.appendChild(script);
 }
 
-
-// [SESSION 2 - TASK 1] Secure backend payment verification
 async function _verifyPayment(reference, plan) {
   try {
     const res = await fetch('https://tes-pro-backend.onrender.com/verify-payment', {
@@ -231,20 +226,15 @@ async function _verifyPayment(reference, plan) {
       console.warn('[TES] Backend rejected payment:', reference, data);
     }
   } catch (err) {
-    // Fallback — never lock user out due to backend downtime
     console.warn('[TES] Verification fetch failed, granting access directly:', err.message);
     onPaymentSuccess(plan);
   }
 }
 
-/* ══════════════════════════════════════════════
-   bootUser — checks localStorage subscription.
-   Written by onPaymentSuccess after Paystack
-   callback. Frontend-only, no backend needed.
-══════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════
+   BOOT USER
+   ═══════════════════════════════════════════════════════════ */
 async function bootUser(uid) {
-
-  // Owner bypass — always full access
   if (typeof isOwner === 'function' && isOwner(S.user.email)) {
     S.profile = { uid, email: S.user.email, plan: 'owner', paymentStatus: 'paid' };
     console.log('[TES] Owner bypass active');
@@ -252,10 +242,9 @@ async function bootUser(uid) {
     return;
   }
 
-  // [CLOUD SYNC] Check Firestore first, fall back to localStorage
   const now = Date.now();
-  let sub = await _subReadCloud(uid);   // try Firestore
-  if (!sub) sub = _subRead(uid);        // fallback: localStorage cache
+  let sub = await _subReadCloud(uid);
+  if (!sub) sub = _subRead(uid);
 
   if (sub && sub.status === 'active' && now < sub.expiresAt) {
     S.profile = {
@@ -267,19 +256,16 @@ async function bootUser(uid) {
     };
     _launchApp();
   } else {
-    // No valid subscription anywhere → show locked screen
     S.profile = { uid, email: S.user.email, paymentStatus: 'free' };
     _setupLockedScreen();
     show('screen-locked');
   }
 }
 
-/* ─── LOCKED SCREEN SETUP ─────────────────────────────────── */
 function _setupLockedScreen() {
   const emailEl = document.getElementById('locked-email');
   if (emailEl) emailEl.textContent = S.user?.email || '';
 
-  // Show expiry notice if subscription just lapsed
   const sub     = _subRead(S.user?.uid);
   const noteEl  = document.getElementById('locked-expiry-note');
   if (noteEl && sub && sub.expiresAt) {
@@ -287,7 +273,6 @@ function _setupLockedScreen() {
     noteEl.textContent = expired ? 'Your subscription expired. Renew below.' : '';
   }
 
-  // Render correct prices from constants
   const rate   = (typeof USD_TO_NGN      !== 'undefined') ? USD_TO_NGN      : 1500;
   const prices = (typeof PLAN_PRICES_USD !== 'undefined') ? PLAN_PRICES_USD : { monthly: 15, annual: 120 };
 
@@ -298,7 +283,7 @@ function _setupLockedScreen() {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   APP LAUNCH
+   APP LAUNCH & TEARDOWN
    ═══════════════════════════════════════════════════════════ */
 function _launchApp() {
   show('screen-app');
@@ -306,24 +291,81 @@ function _launchApp() {
   _setupDashboard();
   _subscribeToTrades();
   _restoreCurrencyAnalysis();
-  // [SESSION 2 - TASK 2] Auto-load live macro data
-  fetchAndInjectMacroData();
-  // [SESSION 2 - TASK 3] Auto-load news sentiment
-  fetchAndInjectNewsSentiment();
+  fetchAndInjectMacroData().catch(() => {});
+  fetchAndInjectNewsSentiment().catch(() => {});
+  _initCurrencyInputs();
+  _initWBBInputs();
+  goPage('dashboard');
 }
 
 function _teardown() {
   if (S.unsubTrades) { S.unsubTrades(); S.unsubTrades = null; }
+  if (_sessionTimerInterval) { clearInterval(_sessionTimerInterval); _sessionTimerInterval = null; }
+  if (_goldSessionInterval) { clearInterval(_goldSessionInterval); _goldSessionInterval = null; }
   S.trades   = [];
   S.rankings = [];
 }
 
-/* ─── TOPBAR ──────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════
+   AUTH UI & TAB SWITCHING
+   ═══════════════════════════════════════════════════════════ */
+function authTab(tabName, btn) {
+  document.querySelectorAll('.atab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.auth-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('auth-' + tabName).classList.add('active');
+}
+
+async function doLogin() {
+  const email = document.getElementById('l-email')?.value?.trim() || '';
+  const pass  = document.getElementById('l-pass')?.value          || '';
+  _clearErr('l-err');
+
+  if (!email || !pass) { _showErr('l-err', 'Enter your email and password.'); return; }
+
+  const btn = document.querySelector('[onclick="doLogin()"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Signing in…'; }
+
+  try {
+    await _auth.signInWithEmailAndPassword(email, pass);
+  } catch (e) {
+    _showErr('l-err', _fbErr(e.code));
+    if (btn) { btn.disabled = false; btn.textContent = 'Sign In'; }
+  }
+}
+
+async function doSignup() {
+  const email = document.getElementById('s-email')?.value?.trim() || '';
+  const pass  = document.getElementById('s-pass')?.value          || '';
+  _clearErr('s-err');
+
+  if (!email || !pass) { _showErr('s-err', 'Enter email and password.'); return; }
+  if (pass.length < 6) { _showErr('s-err', 'Password needs at least 6 characters.'); return; }
+
+  const btn = document.querySelector('[onclick="doSignup()"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating…'; }
+
+  try {
+    await _auth.createUserWithEmailAndPassword(email, pass);
+  } catch (e) {
+    _showErr('s-err', _fbErr(e.code));
+    if (btn) { btn.disabled = false; btn.textContent = 'Create Account'; }
+  }
+}
+
+async function doLogout() {
+  _teardown();
+  try { await _auth.signOut(); }
+  catch { show('screen-auth'); }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TOPBAR
+   ═══════════════════════════════════════════════════════════ */
 function _setupTopbar() {
   const emailEl = document.getElementById('tb-email');
   if (emailEl) emailEl.textContent = (S.user?.email || '').split('@')[0];
 
-  // [N4] Days remaining display
   const daysEl  = document.getElementById('tb-days');
   const renewEl = document.getElementById('btn-renew');
 
@@ -341,12 +383,14 @@ function _setupTopbar() {
       daysEl.style.color    = daysLeft <= 5 ? '#ff4560' : '#00d4a1';
     }
     if (renewEl) {
-      renewEl.style.display = daysLeft <= 7 ? 'inline-flex' : 'none';
+      renewEl.style.display = daysLeft <= 7 ? 'inline-block' : 'none';
     }
   }
 }
 
-/* ─── DASHBOARD ───────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════
+   DASHBOARD
+   ═══════════════════════════════════════════════════════════ */
 function _setupDashboard() {
   const h  = new Date().getHours();
   const gr = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
@@ -357,6 +401,11 @@ function _setupDashboard() {
   }));
 }
 
+function _updateDashboardStats() {
+  _updateStats();
+  _renderRecentTrades();
+}
+
 function _updateStats() {
   const t    = S.trades;
   const wins = t.filter(x => x.outcome === 'win').length;
@@ -364,6 +413,7 @@ function _updateStats() {
   const netR = t.reduce((a, x) => {
     return a + (x.outcome === 'win' ? parseFloat(x.rr || 1) : x.outcome === 'loss' ? -1 : 0);
   }, 0);
+  
   _setText('stat-total',  t.length || '—');
   _setText('stat-wins',   wins     || '—');
   _setText('stat-losses', t.filter(x => x.outcome === 'loss').length || '—');
@@ -371,8 +421,30 @@ function _updateStats() {
   _setText('stat-netr',   t.length ? (netR >= 0 ? '+' : '') + netR.toFixed(1) + 'R' : '—');
 }
 
+function _renderRecentTrades() {
+  const el = document.getElementById('home-recent-trades');
+  if (!el) return;
+  const recent = S.trades.slice(0, 3);
+  if (!recent.length) {
+    el.innerHTML = '<p style="color:var(--t3);font-size:13px;padding:8px 0">No trades logged yet.</p>';
+    return;
+  }
+  el.innerHTML = recent.map(t => {
+    const col = t.outcome === 'win' ? '#00d4a1' : t.outcome === 'loss' ? '#ff4560' : '#3d9eff';
+    const oc  = (t.outcome || 'be').toUpperCase();
+    const dir = t.direction === 'BUY' ? '↑' : '↓';
+    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--bd)">
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:700">${t.pair || '—'} ${dir}</div>
+        <div style="font-size:11px;color:var(--t2);margin-top:2px">1:${t.rr || '—'}</div>
+      </div>
+      <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:15px;background:${col}20;color:${col}">${oc}</span>
+    </div>`;
+  }).join('');
+}
+
 /* ═══════════════════════════════════════════════════════════
-   FIRESTORE — TRADES (real-time listener)
+   FIRESTORE — TRADES
    ═══════════════════════════════════════════════════════════ */
 function _subscribeToTrades() {
   if (!S.user || !_db) return;
@@ -386,6 +458,7 @@ function _subscribeToTrades() {
       S.trades = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       _updateStats();
       _renderTradeList();
+      _updateDashboardStats();
     }, err => console.error('[TES] trades listener:', err));
 }
 
@@ -399,18 +472,43 @@ async function _saveTrade(trade) {
 
 async function deleteTrade(tradeId) {
   if (!_db || !S.user) return;
-  await _db.collection('users').doc(S.user.uid).collection('trades').doc(tradeId).delete();
-  _toast('Trade deleted.');
+  try {
+    await _db.collection('users').doc(S.user.uid).collection('trades').doc(tradeId).delete();
+    _toast('Trade deleted.', 'success');
+  } catch (e) {
+    console.error('[TES] delete failed:', e);
+    _toast('Delete failed. Try again.', 'error');
+  }
 }
 
 /* ─── TRADE FORM ──────────────────────────────────────────── */
+function toggleJournalForm() {
+  const el = document.getElementById('trade-form-wrap');
+  const btn = document.getElementById('btn-jform');
+  if (!el || !btn) return;
+  
+  if (el.style.display === 'block') {
+    hideTradeForm();
+  } else {
+    showTradeForm();
+  }
+}
+
 function showTradeForm() {
   const el = document.getElementById('trade-form-wrap');
-  if (el) { el.style.display = 'block'; el.scrollIntoView({ behavior: 'smooth' }); }
+  const btn = document.getElementById('btn-jform');
+  if (!el) return;
+  el.style.display = 'block';
+  if (btn) btn.textContent = '× Close';
+  el.scrollIntoView({ behavior: 'smooth' });
 }
+
 function hideTradeForm() {
   const el = document.getElementById('trade-form-wrap');
-  if (el) el.style.display = 'none';
+  const btn = document.getElementById('btn-jform');
+  if (!el) return;
+  el.style.display = 'none';
+  if (btn) btn.textContent = '+ Log Trade';
   _resetTradeForm();
 }
 
@@ -434,17 +532,20 @@ function calcRR() {
   return parseFloat(rr.toFixed(2));
 }
 
-// [CLOUD STORAGE] Upload screenshot to Firebase Storage
 async function _uploadScreenshot(inputId) {
   const input = document.getElementById(inputId);
   if (!input?.files?.[0]) return null;
   if (!_storage) { console.warn('[TES] Storage not initialized'); return null; }
 
   const file = input.files[0];
+  if (file.size > 2 * 1024 * 1024) {
+    _toast('Image too large. Max 2 MB.', 'warning');
+    return null;
+  }
+
   const uid = S.user?.uid;
   if (!uid) return null;
 
-  // Generate unique filename: trades/{uid}/{timestamp}.jpg
   const timestamp = Date.now();
   const path = `trades/${uid}/${timestamp}.jpg`;
   const ref = _storage.ref(path);
@@ -452,8 +553,8 @@ async function _uploadScreenshot(inputId) {
   try {
     const snapshot = await ref.put(file, { contentType: 'image/jpeg' });
     const url = await snapshot.ref.getDownloadURL();
-    console.log('[TES] Screenshot uploaded \u2705');
-    return url; // return URL, not base64
+    console.log('[TES] Screenshot uploaded ✅');
+    return url;
   } catch (e) {
     console.error('[TES] Screenshot upload failed:', e);
     _toast('Screenshot upload failed. Trade saved without image.', 'warning');
@@ -461,20 +562,7 @@ async function _uploadScreenshot(inputId) {
   }
 }
 
-// Legacy: keep for backward compatibility if needed
-function _readImageBase64(inputId) {
-  return new Promise(resolve => {
-    const input = document.getElementById(inputId);
-    if (!input?.files?.[0]) { resolve(null); return; }
-    const reader = new FileReader();
-    reader.onload  = e => resolve(e.target.result);
-    reader.onerror = ()  => resolve(null);
-    reader.readAsDataURL(input.files[0]);
-  });
-}
-
 async function submitTrade() {
-  // News filter check
   const newsOk = document.getElementById('j-news-check')?.checked;
   if (!newsOk) {
     _toast('Confirm: no high-impact news nearby before submitting.', 'warning');
@@ -491,8 +579,8 @@ async function submitTrade() {
 
   if (!entry || !sl) { _toast('Enter at least Entry and Stop Loss.', 'warning'); return; }
   if (!S.outcome)    { _toast('Select an outcome (Win / Loss / BE).', 'warning'); return; }
+  if (entry === sl)  { _toast('Entry and Stop Loss cannot be the same.', 'warning'); return; }
 
-  // [CLOUD STORAGE] Upload screenshot (returns URL, not base64)
   const imageUrl = await _uploadScreenshot('j-image');
 
   const trade = {
@@ -501,7 +589,7 @@ async function submitTrade() {
     outcome: S.outcome,
     session: sess,
     notes,
-    ...(imageUrl && { imageUrl })  // store URL only
+    ...(imageUrl && { imageUrl })
   };
 
   try {
@@ -528,7 +616,11 @@ function _resetTradeForm() {
 /* ─── TRADE RENDERING ─────────────────────────────────────── */
 function _renderTradeList() {
   const el = document.getElementById('trade-list');
+  const subtitle = document.getElementById('j-subtitle');
   if (!el) return;
+  
+  if (subtitle) subtitle.textContent = S.trades.length + (S.trades.length === 1 ? ' trade' : ' trades');
+  
   if (!S.trades.length) {
     el.innerHTML = '<p style="color:#5a6a8a;font-size:13px;padding:16px 0">No trades logged yet.</p>';
     return;
@@ -550,8 +642,7 @@ function _tradeCardHTML(t) {
   const notes = t.notes
     ? `<div style="font-size:12px;color:#5a6a8a;margin-top:6px;line-height:1.5">${_escHtml(t.notes)}</div>`
     : '';
-  // [CLOUD STORAGE] Support both old (image) and new (imageUrl) formats
-  const imgUrl = t.imageUrl || t.image; // imageUrl is new, image is legacy
+  const imgUrl = t.imageUrl || t.image;
   const img = imgUrl
     ? `<div style="margin-top:10px"><img src="${imgUrl}" alt="screenshot"
          style="max-width:100%;max-height:180px;border-radius:8px;border:1px solid rgba(255,255,255,.08);object-fit:contain;cursor:pointer;display:block"
@@ -578,56 +669,136 @@ function _tradeCardHTML(t) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   CURRENCY STRENGTH — AUTOMATIC SCORING ENGINE
-   [N5] calculateCurrencyScore(data) — pure function, no DOM deps
-   [N6] runCurrencyAnalysis() — reads inputs, computes, renders
+   CHECKLIST
+   ═══════════════════════════════════════════════════════════ */
+function clToggle(el) {
+  el.classList.toggle('checked');
+  _updateChecklistProgress();
+}
 
-   Factor weights (empirically reasonable for FX):
-     Rate direction   ±3   (biggest fundamental driver)
-     CPI trend        ±2   (inflation → rate expectation)
-     CB stance        ±2   (hawkish/dovish signal)
-     Employment       ±2   (risk proxy + rate driver)
-     Risk sentiment   ±1.5 (affects commodity/safe-haven FX)
+function clReset() {
+  document.querySelectorAll('.cl-item').forEach(el => el.classList.remove('checked'));
+  _updateChecklistProgress();
+}
+
+function clSubmit() {
+  const checked = document.querySelectorAll('.cl-item.checked').length;
+  if (checked < 12) {
+    _toast('Complete all 12 items before proceeding.', 'warning');
+    return;
+  }
+  goPage('journal');
+  showTradeForm();
+}
+
+function _updateChecklistProgress() {
+  const checked = document.querySelectorAll('.cl-item.checked').length;
+  const total = document.querySelectorAll('.cl-item').length;
+  const pct = Math.round(checked / total * 100);
+  
+  const bar = document.getElementById('cl-bar');
+  const count = document.getElementById('cl-count');
+  const pctEl = document.getElementById('cl-pct');
+  
+  if (bar) bar.style.width = pct + '%';
+  if (count) count.textContent = checked + '/' + total;
+  if (pctEl) pctEl.textContent = pct + '%';
+}
+
+/* ═══════════════════════════════════════════════════════════
+   THEME TOGGLE
+   ═══════════════════════════════════════════════════════════ */
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('tes_theme', next);
+  const label = document.getElementById('theme-label');
+  if (label) label.textContent = next === 'dark' ? 'Dark Mode' : 'Light Mode';
+}
+
+/* ═══════════════════════════════════════════════════════════
+   EXPORT FUNCTIONS
+   ═══════════════════════════════════════════════════════════ */
+function exportCSV() {
+  if (!S.trades.length) { _toast('No trades to export.', 'warning'); return; }
+  
+  const headers = ['Date', 'Pair', 'Direction', 'Entry', 'SL', 'TP', 'R:R', 'Outcome', 'Session', 'Notes'];
+  const rows = S.trades.map(t => {
+    const d = t.createdAt?.toDate ? t.createdAt.toDate() : new Date();
+    return [
+      d.toLocaleDateString(),
+      t.pair || '',
+      t.direction || '',
+      t.entry || '',
+      t.sl || '',
+      t.tp || '',
+      t.rr || '',
+      t.outcome || '',
+      t.session || '',
+      t.notes ? `"${t.notes}"` : ''
+    ].join(',');
+  });
+  
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'tes-pro-trades-' + Date.now() + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  _toast('CSV exported ✓', 'success');
+}
+
+function exportJSON() {
+  if (!S.trades.length) { _toast('No trades to export.', 'warning'); return; }
+  
+  const data = {
+    exportDate: new Date().toISOString(),
+    user: S.user?.email,
+    trades: S.trades
+  };
+  
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'tes-pro-backup-' + Date.now() + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  _toast('JSON exported ✓', 'success');
+}
+
+function confirmDeleteAll() {
+  if (!confirm('Delete ALL trades? This cannot be undone.')) return;
+  
+  const docs = S.trades.map(t => t.id);
+  if (!docs.length) { _toast('No trades to delete.', 'warning'); return; }
+  
+  Promise.all(docs.map(id => deleteTrade(id)))
+    .then(() => _toast('All trades deleted.', 'success'))
+    .catch(e => { console.error(e); _toast('Delete failed.', 'error'); });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CURRENCY STRENGTH ENGINE
    ═══════════════════════════════════════════════════════════ */
 
-/**
- * calculateCurrencyScore — [N5]
- * @param {Object} data - per-currency factor selections
- * @param {string} data.rate       'bullish' | 'bearish' | ''
- * @param {string} data.cpi        'rising'  | 'falling' | ''
- * @param {string} data.cbStance   'hawkish' | 'dovish'  | ''
- * @param {string} data.employment 'strong'  | 'weak'    | ''
- * @param {string} data.risk       'risk-on' | 'risk-off'| ''
- * @returns {number} composite score
- */
 function calculateCurrencyScore(data) {
   let score = 0;
-
-  // Interest rate direction
   if (data.rate === 'bullish') score += 3;
   if (data.rate === 'bearish') score -= 3;
-
-  // CPI trend
-  if (data.cpi === 'rising')  score += 2;   // rising CPI → rate hike pressure
+  if (data.cpi === 'rising')  score += 2;
   if (data.cpi === 'falling') score -= 2;
-
-  // Central bank stance
   if (data.cbStance === 'hawkish') score += 2;
   if (data.cbStance === 'dovish')  score -= 2;
-
-  // Employment data
   if (data.employment === 'strong') score += 2;
   if (data.employment === 'weak')   score -= 2;
-
-  // Risk sentiment (affects commodity currencies vs safe-havens)
-  // Applied per-currency in runCurrencyAnalysis based on currency type
-  // This field is passed through and handled contextually below
-  if (data.risk) score += 0; // handled in context layer
-
   return score;
 }
 
-// Currency behaviour under risk-on / risk-off
 const RISK_SENSITIVITY = {
   AUD: { 'risk-on': +1.5, 'risk-off': -1.5 },
   NZD: { 'risk-on': +1.5, 'risk-off': -1.5 },
@@ -637,17 +808,11 @@ const RISK_SENSITIVITY = {
   USD: { 'risk-on': -0.5, 'risk-off': +1.5 },
   JPY: { 'risk-on': -1.5, 'risk-off': +2.0 },
   CHF: { 'risk-on': -1.0, 'risk-off': +1.5 },
-  XAU: { 'risk-on': -0.5, 'risk-off': +2.0 }  // gold = safe haven
+  XAU: { 'risk-on': -0.5, 'risk-off': +2.0 }
 };
 
-/**
- * runCurrencyAnalysis — [N6]
- * Reads the 5 per-currency factor dropdowns from the DOM,
- * calls calculateCurrencyScore for each currency,
- * applies risk-sentiment adjustment, sorts and renders.
- */
 function runCurrencyAnalysis() {
-   const currencies = ['USD','EUR','GBP','JPY','AUD','NZD','CAD','CHF','XAU'];
+  const currencies = ['USD','EUR','GBP','JPY','AUD','NZD','CAD','CHF','XAU'];
   const globalRisk = document.getElementById('cs-global-risk')?.value || '';
 
   const scored = currencies.map(c => {
@@ -660,20 +825,17 @@ function runCurrencyAnalysis() {
     };
 
     let score = calculateCurrencyScore(data);
-
-    // [SESSION 2 - TASK 3] News bias nudge (0.5 weight — never overrides fundamentals)
     score += (window.NEWS_BIAS?.[c] || 0) * 0.5;
 
-    // XAU override — gold driven by rate direction + risk sentiment only
+    // XAU override
     if (c === 'XAU') {
       score = 0;
-      if (data.rate === 'bullish') score += 3;   // rising gold price
+      if (data.rate === 'bullish') score += 3;
       if (data.rate === 'bearish') score -= 3;
-      if (data.cpi === 'rising')   score += 2;   // inflation = gold bid
+      if (data.cpi === 'rising')   score += 2;
       if (data.cpi === 'falling')  score -= 1;
     }
 
-    // Apply risk-sentiment layer
     if (globalRisk && RISK_SENSITIVITY[c]) {
       score += RISK_SENSITIVITY[c][globalRisk] || 0;
     }
@@ -681,36 +843,36 @@ function runCurrencyAnalysis() {
     return { currency: c, score: parseFloat(score.toFixed(2)) };
   });
 
-
-  // Sort strongest → weakest
   const rankings = scored.sort((a, b) => b.score - a.score);
   S.rankings = rankings;
 
-  // Persist to localStorage so rankings survive page nav
   if (S.user) {
-    localStorage.setItem('tes_cs_' + S.user.uid, JSON.stringify(rankings));
+    try { localStorage.setItem('tes_cs_' + S.user.uid, JSON.stringify(rankings)); }
+    catch { console.warn('[TES] localStorage save failed'); }
   }
 
   renderCurrencyTable(rankings);
   renderTradeSuggestions(rankings);
-  renderAISummary(rankings);  // ← ADD THIS LINE
+  renderTradeInsight(rankings);
+  _toast('✅ Currency analysis complete', 'success');
 }
 
-/* ─── AI BIAS SUMMARY ── [N9] ─────────────────────────────
-   Reads rankings + top suggestions, calls Claude API,
-   renders a plain-English analyst summary.
-   ────────────────────────────────────────────────────────── */
-async function renderAISummary(rankings) {
-  const el = document.getElementById('ai-summary-box');
-  if (!el) return;
+function _initCurrencyInputs() {
+  const currencies = ['USD','EUR','GBP','JPY','AUD','NZD','CAD','CHF','XAU'];
+  const wrap = document.getElementById('cs-inputs-wrap');
+  if (!wrap) return;
 
-  // [TEMPORARILY DISABLED] AI summary re-enabled when backend AI is ready
-  el.innerHTML = `
-    <div style="text-align:center;padding:20px">
-      <p style="font-size:13px;color:#5a6a8a">
-        🤖 AI Bias Analysis coming soon.
-      </p>
+  let html = '';
+  currencies.forEach(c => {
+    html += `<div class="cfs-currency-card">
+      <div class="cfs-cname-row"><div class="cfs-cname">${c}</div></div>
+      <div class="cfs-field"><label>Rate</label><select id="cs-${c}-rate"><option value="">—</option><option value="bullish">Bullish</option><option value="bearish">Bearish</option></select></div>
+      <div class="cfs-field"><label>CPI</label><select id="cs-${c}-cpi"><option value="">—</option><option value="rising">Rising</option><option value="falling">Falling</option></select></div>
+      <div class="cfs-field"><label>CB Stance</label><select id="cs-${c}-stance"><option value="">—</option><option value="hawkish">Hawkish</option><option value="dovish">Dovish</option></select></div>
+      <div class="cfs-field"><label>Employment</label><select id="cs-${c}-employment"><option value="">—</option><option value="strong">Strong</option><option value="weak">Weak</option></select></div>
     </div>`;
+  });
+  wrap.innerHTML = html;
 }
 
 function _restoreCurrencyAnalysis() {
@@ -722,10 +884,321 @@ function _restoreCurrencyAnalysis() {
       renderCurrencyTable(saved);
       renderTradeSuggestions(saved);
     }
-  } catch { /* no saved data, fine */ }
+  } catch { /* no saved data */ }
 }
 
-/* ─── [SESSION 2 - TASK 2] MACRO DATA INJECTION ──────────── */
+/* ─── CURRENCY TABLE ──────────────────────────────────────── */
+function renderCurrencyTable(rankings) {
+  const tbody = document.getElementById('cs-table-body');
+  const wrap  = document.getElementById('cs-results-wrap');
+  if (!tbody) return;
+  if (wrap) wrap.style.display = 'block';
+
+  const maxAbs = Math.max(...rankings.map(r => Math.abs(r.score)), 1);
+
+  tbody.innerHTML = rankings.map((r, i) => {
+    const pct   = Math.min(100, Math.round((Math.abs(r.score) / maxAbs) * 100));
+    const color = r.score > 1 ? '#00d4a1' : r.score < -1 ? '#ff4560' : '#7a8eb0';
+    const badge = r.score > 1 ? 'BULL' : r.score < -1 ? 'BEAR' : 'NEU';
+    const sign  = r.score > 0 ? '+' : '';
+
+    return `<tr>
+      <td style="padding:9px 10px;color:#5a6a8a;font-size:12px">${i + 1}</td>
+      <td style="padding:9px 10px;font-weight:800;font-size:15px">${r.currency}</td>
+      <td style="padding:9px 10px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="flex:1;height:7px;background:#1c2840;border-radius:4px;overflow:hidden;min-width:60px">
+            <div style="width:${pct}%;height:100%;background:${color};border-radius:4px;transition:width .4s ease"></div>
+          </div>
+          <span style="font-size:12px;font-weight:700;color:${color};min-width:36px;text-align:right">${sign}${r.score}</span>
+        </div>
+      </td>
+      <td style="padding:9px 10px">
+        <span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;background:${color}20;color:${color}">${badge}</span>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+/* ─── TRADE SUGGESTIONS ───────────────────────────────────── */
+function renderTradeSuggestions(rankings) {
+  const el = document.getElementById('sugg-list');
+  if (!el) return;
+
+  if (!rankings.length) {
+    el.innerHTML = '<p style="color:#5a6a8a;font-size:13px">Run analysis above to generate suggestions.</p>';
+    return;
+  }
+
+  const suggestions = [];
+  TRADE_PAIRS.forEach(([base, quote]) => {
+    const bRank = rankings.find(r => r.currency === base);
+    const qRank = rankings.find(r => r.currency === quote);
+    if (!bRank || !qRank) return;
+
+    const diff = bRank.score - qRank.score;
+    if (Math.abs(diff) < 1.5) return;
+
+    suggestions.push({
+      pair:      base + quote,
+      direction: diff > 0 ? 'BUY' : 'SELL',
+      score:     Math.abs(diff),
+      strong:    diff > 0 ? base  : quote,
+      weak:      diff > 0 ? quote : base
+    });
+  });
+
+  const top3 = suggestions.sort((a, b) => b.score - a.score).slice(0, 3);
+
+  if (!top3.length) {
+    el.innerHTML = '<p style="color:#5a6a8a;font-size:13px">No strong setups found.</p>';
+    return;
+  }
+
+  el.innerHTML = top3.map((s, i) => {
+    const col   = s.direction === 'BUY' ? '#00d4a1' : '#ff4560';
+    const arrow = s.direction === 'BUY' ? '↑' : '↓';
+    const conf  = Math.min(99, Math.round(50 + s.score * 7));
+
+    return `<div style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:14px">
+      <div style="width:40px;height:40px;border-radius:10px;background:${col}18;border:1px solid ${col}50;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:${col};flex-shrink:0">${arrow}</div>
+      <div style="flex:1">
+        <div style="font-size:18px;font-weight:900;letter-spacing:-.3px">${s.pair}</div>
+        <div style="font-size:11px;color:#5a6a8a;margin-top:2px">${s.strong} strong vs ${s.weak} weak</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:16px;font-weight:800;color:${col}">${s.direction}</div>
+        <div style="font-size:11px;color:#5a6a8a;margin-top:2px">${conf}% conf</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ─── TRADE INSIGHT ───────────────────────────────────────── */
+function generateTradeInsight(rankings) {
+  if (!rankings || rankings.length < 2) return null;
+  const fx      = rankings.filter(r => r.currency !== 'XAU');
+  const xau     = rankings.find(r => r.currency === 'XAU');
+  const strong  = fx[0];
+  const weak    = fx[fx.length - 1];
+  const diff    = parseFloat((strong.score - weak.score).toFixed(2));
+
+  let confidence, setup, plan;
+
+  if (diff > 4) {
+    confidence = 'HIGH';
+    setup      = 'Trend Continuation';
+    plan       = `Strong divergence: ${strong.currency} outperforming ${weak.currency}. Look for pullbacks on ${strong.currency + weak.currency} for continuation. Target 1:2 minimum R:R.`;
+  } else if (diff > 2) {
+    confidence = 'MEDIUM';
+    setup      = 'Momentum Setup';
+    plan       = `Moderate divergence. Bias favours ${strong.currency + weak.currency} longs. Wait for M15 confirmation before entry.`;
+  } else {
+    confidence = 'LOW';
+    setup      = 'No Clear Edge';
+    plan       = `Close scores. No dominant bias. Best to wait for macro clarity.`;
+  }
+
+  let xauNote = '';
+  if (xau) {
+    const globalRisk = document.getElementById('cs-global-risk')?.value || '';
+    if (globalRisk === 'risk-off' && xau.score > 2) {
+      xauNote = `Gold (XAU) is elevated — confirms risk-off. Consider XAUUSD longs.`;
+    } else if (globalRisk === 'risk-on' && xau.score < 0) {
+      xauNote = `Gold (XAU) is weak — confirms risk-on. Favour commodity currencies.`;
+    }
+  }
+
+  return {
+    pair:       strong.currency + weak.currency,
+    direction:  'BUY ' + strong.currency + ' / SELL ' + weak.currency,
+    confidence,
+    setup,
+    plan,
+    xauNote,
+    scoreDiff:  diff,
+    strong:     strong.currency,
+    weak:       weak.currency
+  };
+}
+
+function renderTradeInsight(rankings) {
+  const el = document.getElementById('trade-insight');
+  if (!el) return;
+
+  const insight = generateTradeInsight(rankings);
+
+  if (!insight) {
+    el.innerHTML = '<p style="color:#5a6a8a;font-size:13px;padding:12px 0">Run analysis to generate trade insight.</p>';
+    return;
+  }
+
+  const confColor = insight.confidence === 'HIGH'   ? '#00d4a1'
+                  : insight.confidence === 'MEDIUM' ? '#e4ae2a'
+                  : '#ff4560';
+
+  const confBg    = insight.confidence === 'HIGH'   ? 'rgba(0,212,161,.1)'
+                  : insight.confidence === 'MEDIUM' ? 'rgba(228,174,42,.1)'
+                  : 'rgba(255,69,96,.1)';
+
+  const dirCol    = insight.direction.startsWith('BUY') ? '#00d4a1' : '#ff4560';
+
+  el.innerHTML = `
+    <div style="margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">⚡ Trade Execution Insight</div>
+        <div style="font-size:22px;font-weight:900;letter-spacing:-.5px;color:var(--t1)">
+          ${insight.pair}
+          <span style="font-size:14px;font-weight:700;color:${dirCol};margin-left:8px">${insight.direction}</span>
+        </div>
+      </div>
+      <div style="text-align:right">
+        <div style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:100px;background:${confBg};border:1px solid ${confColor}40">
+          <div style="width:7px;height:7px;border-radius:50%;background:${confColor}"></div>
+          <span style="font-size:12px;font-weight:800;color:${confColor};letter-spacing:.5px">
+            ${insight.confidence} CONFIDENCE
+          </span>
+        </div>
+        <div style="font-size:11px;color:#5a6a8a;margin-top:4px">Score Δ ${insight.scoreDiff}</div>
+      </div>
+    </div>
+
+    <div style="background:#0c1525;border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px;margin-bottom:12px">
+      <div style="font-size:10px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Setup Type</div>
+      <div style="font-size:14px;font-weight:700;color:var(--gold)">${insight.setup}</div>
+    </div>
+
+    <div style="background:#0c1525;border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px;margin-bottom:${insight.xauNote ? '12px' : '0'}">
+      <div style="font-size:10px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Execution Plan</div>
+      <div style="font-size:13px;color:var(--t1);line-height:1.7">${insight.plan}</div>
+    </div>
+
+    ${insight.xauNote ? `<div style="background:rgba(228,174,42,.06);border:1px solid rgba(228,174,42,.2);border-radius:10px;padding:12px;margin-top:0">
+      <div style="font-size:12px;color:#e4ae2a;line-height:1.6">🥇 ${insight.xauNote}</div>
+    </div>` : ''}`;
+}
+
+/* ─── TRADE PLAN ──────────────────────────────────────────── */
+function generateTradePlan(pair, rankings) {
+  if (!rankings || rankings.length < 2) return null;
+
+  const fx = rankings.filter(r => r.currency !== 'XAU');
+  let base, quote;
+
+  if (pair) {
+    const currencies = ['USD','EUR','GBP','JPY','AUD','NZD','CAD','CHF','XAU'];
+    base  = currencies.find(c => pair.startsWith(c));
+    quote = currencies.find(c => pair.endsWith(c) && c !== base);
+  }
+
+  if (!base || !quote) {
+    base  = fx[0]?.currency;
+    quote = fx[fx.length - 1]?.currency;
+  }
+
+  const baseRank  = rankings.find(r => r.currency === base);
+  const quoteRank = rankings.find(r => r.currency === quote);
+
+  if (!baseRank || !quoteRank) return null;
+
+  const diff      = parseFloat((baseRank.score - quoteRank.score).toFixed(2));
+  const direction = diff >= 0 ? 'BUY' : 'SELL';
+  const absDiff   = Math.abs(diff);
+  const confidence = absDiff > 4 ? 'HIGH' : absDiff > 2 ? 'MEDIUM' : 'LOW';
+
+  const entry = direction === 'BUY'
+    ? 'Wait for pullback into premium demand zone on H1.'
+    : 'Wait for retracement into supply zone on H1.';
+
+  const stopLoss = direction === 'BUY'
+    ? 'Below recent swing low. Minimum 10 pips buffer.'
+    : 'Above recent swing high. Minimum 10 pips buffer.';
+
+  const takeProfit = direction === 'BUY'
+    ? 'Target next resistance. Minimum 1:2 R:R.'
+    : 'Target next support. Minimum 1:2 R:R.';
+
+  const riskNote = `Max risk 1–2% per trade. Divergence: ${absDiff.toFixed(1)} — ${confidence.toLowerCase()} confidence. ${confidence === 'LOW' ? 'Consider sitting out.' : 'Wait for confirmation.'}`;
+
+  return {
+    pair:       base + quote,
+    direction,
+    bias:       base + ' strong / ' + quote + ' weak',
+    entry,
+    stopLoss,
+    takeProfit,
+    riskNote,
+    confidence,
+    scoreDiff:  absDiff
+  };
+}
+
+function generateTopTradePlan() {
+  const rankings = S.rankings;
+  if (!rankings || rankings.length < 2) {
+    _toast('Run currency analysis first.', 'warning');
+    return;
+  }
+  renderTradePlan(null, rankings);
+  const el = document.getElementById('trade-plan');
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderTradePlan(pair, rankings) {
+  const el = document.getElementById('trade-plan');
+  if (!el) return;
+
+  const plan = generateTradePlan(pair, rankings);
+  if (!plan) {
+    el.innerHTML = '<p style="color:var(--t3);font-size:13px;padding:12px 0">Could not generate plan.</p>';
+    return;
+  }
+
+  const dirCol   = plan.direction === 'BUY' ? '#00d4a1' : '#ff4560';
+  const dirArrow = plan.direction === 'BUY' ? '↑' : '↓';
+  const confCol  = plan.confidence === 'HIGH' ? '#00d4a1' : plan.confidence === 'MEDIUM' ? '#e4ae2a' : '#ff4560';
+  const confBg   = plan.confidence === 'HIGH' ? 'rgba(0,212,161,.08)' : plan.confidence === 'MEDIUM' ? 'rgba(228,174,42,.08)' : 'rgba(255,69,96,.08)';
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">⚡ Trade Plan</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:26px;font-weight:900;letter-spacing:-.5px;color:var(--t1)">${plan.pair}</span>
+          <span style="font-size:15px;font-weight:800;color:${dirCol};background:${dirCol}18;border:1px solid ${dirCol}40;border-radius:8px;padding:4px 12px">
+            ${dirArrow} ${plan.direction}
+          </span>
+          <span style="font-size:11px;font-weight:800;color:${confCol};background:${confBg};border:1px solid ${confCol}30;border-radius:20px;padding:3px 10px">
+            ${plan.confidence} CONF
+          </span>
+        </div>
+        <div style="font-size:12px;color:var(--t2);margin-top:6px">${plan.bias}</div>
+      </div>
+    </div>
+
+    <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:12px;padding:0 14px;overflow:hidden">
+      <div style="padding:12px 0;border-bottom:1px solid var(--bd);display:flex;align-items:flex-start;gap:12px">
+        <div style="width:32px;height:32px;border-radius:8px;background:var(--bg1);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">🎯</div>
+        <div style="flex:1"><div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Entry Condition</div><div style="font-size:13px;color:var(--t1);line-height:1.6">${plan.entry}</div></div>
+      </div>
+      <div style="padding:12px 0;border-bottom:1px solid var(--bd);display:flex;align-items:flex-start;gap:12px">
+        <div style="width:32px;height:32px;border-radius:8px;background:var(--bg1);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">🛑</div>
+        <div style="flex:1"><div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Stop Loss</div><div style="font-size:13px;color:#ff4560;line-height:1.6">${plan.stopLoss}</div></div>
+      </div>
+      <div style="padding:12px 0;border-bottom:1px solid var(--bd);display:flex;align-items:flex-start;gap:12px">
+        <div style="width:32px;height:32px;border-radius:8px;background:var(--bg1);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">💰</div>
+        <div style="flex:1"><div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Take Profit</div><div style="font-size:13px;color:#00d4a1;line-height:1.6">${plan.takeProfit}</div></div>
+      </div>
+      <div style="padding:12px 0;display:flex;align-items:flex-start;gap:12px">
+        <div style="width:32px;height:32px;border-radius:8px;background:var(--bg1);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">⚠️</div>
+        <div style="flex:1"><div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Risk Note</div><div style="font-size:13px;color:var(--gold);line-height:1.6">${plan.riskNote}</div></div>
+      </div>
+    </div>`;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MACRO DATA INJECTION
+   ═══════════════════════════════════════════════════════════ */
 async function fetchAndInjectMacroData() {
   try {
     const res = await fetch('https://tes-pro-backend.onrender.com/macro-data');
@@ -760,11 +1233,12 @@ async function fetchAndInjectMacroData() {
 
   } catch (err) {
     console.warn('[TES] Macro fetch failed:', err.message);
-    _toast('⚠️ Using manual inputs', 'warning');
   }
 }
 
-/* ─── [SESSION 2 - TASK 3] NEWS SENTIMENT INJECTION ─────── */
+/* ═══════════════════════════════════════════════════════════
+   NEWS SENTIMENT INJECTION
+   ═══════════════════════════════════════════════════════════ */
 async function fetchAndInjectNewsSentiment() {
   try {
     const res = await fetch('https://tes-pro-backend.onrender.com/news-sentiment');
@@ -827,914 +1301,543 @@ function _showBreakingAlert(title) {
   el._dismiss = setTimeout(() => { el.style.display = 'none'; }, 6000);
 }
 
-/* ─── RENDER CURRENCY TABLE ── [N7] ───────────────────────── */
-function renderCurrencyTable(rankings) {
-  const tbody = document.getElementById('cs-table-body');
-  const wrap  = document.getElementById('cs-results-wrap');
-  if (!tbody) return;
-  if (wrap) wrap.style.display = 'block';
-
-  const maxAbs = Math.max(...rankings.map(r => Math.abs(r.score)), 1);
-
-  tbody.innerHTML = rankings.map((r, i) => {
-    const pct   = Math.min(100, Math.round((Math.abs(r.score) / maxAbs) * 100));
-    const color = r.score > 1 ? '#00d4a1' : r.score < -1 ? '#ff4560' : '#7a8eb0';
-    const badge = r.score > 1 ? 'BULL' : r.score < -1 ? 'BEAR' : 'NEU';
-    const sign  = r.score > 0 ? '+' : '';
-
-    return `<tr>
-      <td style="padding:9px 10px;color:#5a6a8a;font-size:12px">${i + 1}</td>
-      <td style="padding:9px 10px;font-weight:800;font-size:15px">${r.currency}</td>
-      <td style="padding:9px 10px">
-        <div style="display:flex;align-items:center;gap:8px">
-          <div style="flex:1;height:7px;background:#1c2840;border-radius:4px;overflow:hidden;min-width:60px">
-            <div style="width:${pct}%;height:100%;background:${color};border-radius:4px;transition:width .4s ease"></div>
-          </div>
-          <span style="font-size:12px;font-weight:700;color:${color};min-width:36px;text-align:right">${sign}${r.score}</span>
-        </div>
-      </td>
-      <td style="padding:9px 10px">
-        <span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;background:${color}20;color:${color}">${badge}</span>
-      </td>
-    </tr>`;
-  }).join('');
-}
-
-/* ─── AUTO TRADE SUGGESTIONS ── [N8] ─────────────────────── */
-function renderTradeSuggestions(rankings) {
-  const el = document.getElementById('sugg-list');
-  if (!el) return;
-
-  if (!rankings.length) {
-    el.innerHTML = '<p style="color:#5a6a8a;font-size:13px">Run currency analysis above to generate suggestions.</p>';
-    return;
-  }
-
-  const suggestions = [];
-
-  // Build suggestions: strongest base vs weakest quote
-  TRADE_PAIRS.forEach(([base, quote]) => {
-    const bRank = rankings.find(r => r.currency === base);
-    const qRank = rankings.find(r => r.currency === quote);
-    if (!bRank || !qRank) return;
-
-    const diff = bRank.score - qRank.score;
-    if (Math.abs(diff) < 1.5) return; // not enough divergence for a confident suggestion
-
-    suggestions.push({
-      pair:      base + quote,
-      direction: diff > 0 ? 'BUY' : 'SELL',
-      score:     Math.abs(diff),
-      strong:    diff > 0 ? base  : quote,
-      weak:      diff > 0 ? quote : base
-    });
-  });
-
-  const top3 = suggestions.sort((a, b) => b.score - a.score).slice(0, 3);
-
-  if (!top3.length) {
-    el.innerHTML = '<p style="color:#5a6a8a;font-size:13px">No strong setups found. Adjust fundamentals and try again.</p>';
-    return;
-  }
-
-  el.innerHTML = top3.map((s, i) => {
-    const col   = s.direction === 'BUY' ? '#00d4a1' : '#ff4560';
-    const arrow = s.direction === 'BUY' ? '↑' : '↓';
-    const conf  = Math.min(99, Math.round(50 + s.score * 7));
-
-    return `<div style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:14px">
-      <div style="width:40px;height:40px;border-radius:10px;background:${col}18;border:1px solid ${col}50;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:${col};flex-shrink:0">${arrow}</div>
-      <div style="flex:1">
-        <div style="font-size:18px;font-weight:900;letter-spacing:-.3px">${s.pair}</div>
-        <div style="font-size:11px;color:#5a6a8a;margin-top:2px">${s.strong} strong vs ${s.weak} weak &nbsp;·&nbsp; Δ${s.score.toFixed(1)}</div>
-      </div>
-      <div style="text-align:right;flex-shrink:0">
-        <div style="font-size:16px;font-weight:800;color:${col}">${s.direction}</div>
-        <div style="font-size:11px;color:#5a6a8a;margin-top:2px">${conf}% conf</div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
 /* ═══════════════════════════════════════════════════════════
-   RISK CALCULATOR — [N9]
-   Formula per prompt spec:
-     pipDistance = |entry − stopLoss| × 10000
-     riskAmount  = (balance × risk%) / 100
-     lotSize     = riskAmount / (pipDistance × 10)
-     profit      = |tp − entry| × 10000 × lotSize × 10   (if TP set)
-   [N10] Guards: parseFloat defaults to 0, no division by zero
+   NEWS DECISION ENGINE
    ═══════════════════════════════════════════════════════════ */
-function calcRisk() {
-  const balance  = parseFloat(document.getElementById('rc-balance')?.value)  || 0;
-  const riskPct  = parseFloat(document.getElementById('rc-risk')?.value)      || 0;
-  const entry    = parseFloat(document.getElementById('rc-entry')?.value)     || 0;
-  const stopLoss = parseFloat(document.getElementById('rc-sl')?.value)        || 0;
-  const tp       = parseFloat(document.getElementById('rc-tp')?.value)        || 0;
 
-  const resultEl = document.getElementById('rc-result');
-  if (!resultEl) return;
+const NEWS_PAIRS = {
+  USD: { quote: ['EUR/USD','GBP/USD','AUD/USD','NZD/USD'], base: ['USD/JPY','USD/CAD','USD/CHF'] },
+  EUR: { quote: ['EUR/GBP','EUR/JPY','EUR/CHF','EUR/CAD'], base: ['EUR/USD'] },
+  GBP: { quote: ['GBP/JPY','GBP/CHF','GBP/CAD'], base: ['GBP/USD','EUR/GBP'] },
+  JPY: { quote: [], base: ['USD/JPY','EUR/JPY','GBP/JPY','AUD/JPY','NZD/JPY'] },
+  AUD: { quote: ['AUD/JPY','AUD/CAD','AUD/NZD'], base: ['AUD/USD'] },
+  NZD: { quote: ['NZD/JPY','NZD/CAD'], base: ['NZD/USD','AUD/NZD'] },
+  CAD: { quote: [], base: ['USD/CAD','GBP/CAD','AUD/CAD','EUR/CAD'] },
+  CHF: { quote: [], base: ['USD/CHF','EUR/CHF','GBP/CHF'] }
+};
 
-  // All main inputs needed before we can compute
-  if (!balance || !riskPct || !entry || !stopLoss) {
-    resultEl.innerHTML = '<span style="color:#5a6a8a">Fill in Balance, Risk %, Entry, and Stop Loss to calculate.</span>';
-    return;
-  }
-
-  const pipDist  = Math.abs(entry - stopLoss) * 10000;
-  if (pipDist === 0) {
-    resultEl.innerHTML = '<span style="color:#ff4560">Entry and Stop Loss cannot be the same.</span>';
-    return;
-  }
-
-  const riskAmt  = (balance * riskPct) / 100;
-  const lotSize  = riskAmt / (pipDist * 10);
-
-  // Potential profit (only if TP is set)
-  const hasTP       = tp > 0 && tp !== entry;
-  const rewardPips  = hasTP ? Math.abs(tp - entry) * 10000 : 0;
-  const profit      = hasTP ? rewardPips * lotSize * 10 : 0;
-  const rr          = hasTP && riskAmt > 0 ? (profit / riskAmt).toFixed(2) : null;
-
-  resultEl.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Pip Distance</div>
-        <div style="font-size:22px;font-weight:800;color:#e4ae2a">${pipDist.toFixed(1)}</div>
-      </div>
-      <div style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Risk Amount</div>
-        <div style="font-size:22px;font-weight:800;color:#ff4560">$${riskAmt.toFixed(2)}</div>
-      </div>
-      <div style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Lot Size</div>
-        <div style="font-size:22px;font-weight:800;color:#00d4a1">${lotSize.toFixed(2)}</div>
-      </div>
-      ${hasTP ? `
-      <div style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Potential Profit</div>
-        <div style="font-size:22px;font-weight:800;color:#00d4a1">$${profit.toFixed(2)}</div>
-      </div>
-      <div style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:12px;text-align:center;grid-column:span 2">
-        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Risk : Reward</div>
-        <div style="font-size:22px;font-weight:800;color:#e4ae2a">1 : ${rr}</div>
-      </div>` : ''}
-    </div>`;
-}
-
-/* ─── Risk calc live event listeners ─────────────────────── */
-// [N10] Wired after DOM ready
-document.addEventListener('DOMContentLoaded', () => {
-  ['rc-balance','rc-risk','rc-entry','rc-sl','rc-tp'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('input', calcRisk);
-  });
-});
-
-/* ═══════════════════════════════════════════════════════════
-   AUTH — fixed
-   [B2] Only ONE doLogin definition
-   [B3] doLogout added
-   [B6] alert() replaced with _showErr / _toast
-   ═══════════════════════════════════════════════════════════ */
-async function doLogin() {
-  const email = document.getElementById('l-email')?.value?.trim() || '';
-  const pass  = document.getElementById('l-pass')?.value          || '';
-  _clearErr('l-err');
-
-  if (!email || !pass) { _showErr('l-err', 'Enter your email and password.'); return; }
-
-  const btn = document.querySelector('[onclick="doLogin()"]');
-  if (btn) { btn.disabled = true; btn.textContent = 'Signing in…'; }
-
-  try {
-    await _auth.signInWithEmailAndPassword(email, pass);
-    // onAuthStateChanged handles routing
-  } catch (e) {
-    _showErr('l-err', _fbErr(e.code));
-    if (btn) { btn.disabled = false; btn.textContent = 'Sign In'; }
-  }
-}
-
-async function doSignup() {
-  const email = document.getElementById('s-email')?.value?.trim() || '';
-  const pass  = document.getElementById('s-pass')?.value          || '';
-  _clearErr('s-err');
-
-  if (!email || !pass) { _showErr('s-err', 'Enter email and password.'); return; }
-  if (pass.length < 6) { _showErr('s-err', 'Password needs at least 6 characters.'); return; }
-
-  const btn = document.querySelector('[onclick="doSignup()"]');
-  if (btn) { btn.disabled = true; btn.textContent = 'Creating…'; }
-
-  try {
-    await _auth.createUserWithEmailAndPassword(email, pass);
-    // onAuthStateChanged fires → bootUser → screen-locked (no subscription yet)
-  } catch (e) {
-    _showErr('s-err', _fbErr(e.code));
-    if (btn) { btn.disabled = false; btn.textContent = 'Create Account'; }
-  }
-}
-
-// [B3] Was missing entirely — called from HTML but never defined
-async function doLogout() {
-  _teardown();
-  try { await _auth.signOut(); }
-  catch { show('screen-auth'); }
-}
-
-/* ═══════════════════════════════════════════════════════════
-   UTILITY HELPERS
-   ═══════════════════════════════════════════════════════════ */
-function _toast(msg, type) {
-  let el = document.getElementById('_tes_toast');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = '_tes_toast';
-    Object.assign(el.style, {
-      position: 'fixed', top: '18px', left: '50%',
-      transform: 'translateX(-50%) translateY(-80px)',
-      zIndex: '9999', background: '#141e33',
-      border: '1px solid rgba(255,255,255,.12)',
-      borderRadius: '10px', padding: '11px 20px',
-      fontSize: '13px', fontWeight: '600',
-      transition: 'transform .3s ease', whiteSpace: 'nowrap',
-      pointerEvents: 'none', boxShadow: '0 6px 24px rgba(0,0,0,.5)',
-      color: '#eef2ff', fontFamily: 'inherit'
-    });
-    document.body.appendChild(el);
-  }
-  const colors = { success: '#00d4a1', error: '#ff4560', warning: '#e4ae2a' };
-  el.textContent   = msg;
-  el.style.color   = colors[type] || '#eef2ff';
-  el.style.borderColor = colors[type] ? colors[type] + '55' : 'rgba(255,255,255,.12)';
-  el.style.transform = 'translateX(-50%) translateY(0)';
-  clearTimeout(el._t);
-  el._t = setTimeout(() => { el.style.transform = 'translateX(-50%) translateY(-80px)'; }, 3400);
-}
-
-function _showErr(id, msg) {
-  const el = document.getElementById(id);
-  if (el) { el.textContent = msg; el.style.display = 'block'; }
-}
-function _clearErr(id) {
-  const el = document.getElementById(id);
-  if (el) { el.textContent = ''; el.style.display = 'none'; }
-}
-function _setText(id, val) {
-  const el = document.getElementById(id); if (el) el.textContent = val;
-}
-function _escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-function _fbErr(code) {
-  const m = {
-    'auth/user-not-found':        'No account with this email.',
-    'auth/wrong-password':        'Incorrect password.',
-    'auth/invalid-credential':    'Incorrect email or password.',
-    'auth/email-already-in-use':  'Email already registered. Sign in instead.',
-    'auth/invalid-email':         'Enter a valid email address.',
-    'auth/weak-password':         'Password needs at least 6 characters.',
-    'auth/too-many-requests':     'Too many attempts. Wait a few minutes.',
-    'auth/network-request-failed':'Network error. Check your connection.'
-  };
-  return m[code] || 'Something went wrong. Please try again.';
-}
-
-/* ================================================================
-   TES GOLD DESK — Full JavaScript Engine
-   6 Features: Bias Engine | Why Gold Moved | News Interpreter |
-               Confidence Score | Execution Insight | Sessions
-   ================================================================ */
-
-/* ─── GOLD CONSTANTS ─────────────────────────────────────────── */
-
-var GOLD_NEWS_LOGIC = {
+const NEWS_EXPLANATIONS = {
   cpi: {
-    better: {
-      bias: 'BEARISH', reaction: 'Bearish Gold',
-      why: 'Hotter-than-expected CPI strengthens the USD and raises expectations of prolonged rate hikes. Higher real yields make gold less attractive as a non-yielding asset. Expect gold to sell off.',
-      expect: 'USD rallies. Treasury yields rise. Gold faces selling pressure. Watch for a pullback to key support zones.'
-    },
-    worse: {
-      bias: 'BULLISH', reaction: 'Bullish Gold',
-      why: 'Softer-than-expected CPI weakens the USD and increases probability of future rate cuts. Lower real yields support gold as a store of value. Expect gold to rally.',
-      expect: 'USD weakens. Treasury yields drop. Gold attracts buyers. Look for breakout above resistance.'
-    },
-    inline: {
-      bias: 'NEUTRAL', reaction: 'Neutral — Wait for direction',
-      why: 'CPI in line with expectations means no major repricing of Fed policy. Markets had this priced in already.',
-      expect: 'Gold may consolidate. Watch USD and yield reaction for direction clues.'
-    }
+    better: 'Higher inflation → central bank may hike rates. Bullish for currency as higher rates attract capital.',
+    worse:  'Lower inflation reduces rate hike pressure. Weakens currency as rate cut expectations rise.'
+  },
+  rate: {
+    better: 'Rate hike increases yield differentials. Strong bullish signal.',
+    worse:  'Rate cut reduces yield advantage. Capital flows out, weakening currency.'
   },
   nfp: {
-    better: {
-      bias: 'BEARISH', reaction: 'Bearish Gold',
-      why: 'Strong job numbers signal a healthy economy. The Fed has less reason to cut rates, keeping real yields elevated and pressuring gold downward.',
-      expect: 'USD strengthens on jobs beat. Gold selling likely on open. Watch for a retest of recent lows.'
-    },
-    worse: {
-      bias: 'BULLISH', reaction: 'Bullish Gold',
-      why: 'Weak NFP data signals economic slowdown, increasing probability of Fed rate cuts. Dollar weakens and gold attracts safe-haven and rate-cut positioning.',
-      expect: 'USD dumps on miss. Gold and JPY rally together. Strong buy signal on any pullback.'
-    },
-    inline: {
-      bias: 'NEUTRAL', reaction: 'Neutral — Range likely',
-      why: 'Jobs data met expectations. No major shock to Fed rate path.',
-      expect: 'Gold likely ranges. Monitor technical levels for next directional clue.'
-    }
-  },
-  fomc: {
-    hike: {
-      bias: 'BEARISH', reaction: 'Bearish Gold',
-      why: 'Rate hike increases real yields and strengthens USD. Gold, a non-yielding asset, becomes less attractive versus dollar-denominated alternatives.',
-      expect: 'Immediate USD rally. Gold typically sells off on hike. Look for short opportunities near resistance.'
-    },
-    cut: {
-      bias: 'BULLISH', reaction: 'Strongly Bullish Gold',
-      why: 'Rate cut reduces opportunity cost of holding gold. USD weakens. Real yields fall. This is one of the most powerful catalysts for a gold rally.',
-      expect: 'Strong USD selloff. Gold and silver rally hard. Look for breakout setups on any pullback.'
-    },
-    hold: {
-      bias: 'NEUTRAL', reaction: 'Neutral — Tone matters',
-      why: 'Hold is largely priced in. The key driver will be the statement language and dot plot — hawkish tone bearish for gold, dovish tone bullish.',
-      expect: 'Initial spike then reversal common. Wait for press conference for true direction.'
-    }
-  },
-  employment: {
-    better: {
-      bias: 'BEARISH', reaction: 'Bearish Gold',
-      why: 'Strong employment reduces urgency for Fed rate cuts. Supports USD and weighs on gold.',
-      expect: 'Modest USD strength. Gold may drift lower unless geopolitical risk offsets.'
-    },
-    worse: {
-      bias: 'BULLISH', reaction: 'Bullish Gold',
-      why: 'Weak employment raises recession risk. Safe-haven demand for gold rises and rate cut bets increase.',
-      expect: 'Gold bid on weakness. Risk-off tone supports precious metals.'
-    },
-    inline: {
-      bias: 'NEUTRAL', reaction: 'Neutral',
-      why: 'Employment in line with forecast. No material change to rate outlook.',
-      expect: 'Gold consolidates. Look to other catalysts for next move.'
-    }
+    better: 'Strong employment signals healthy economy and supports tightening. Bullish.',
+    worse:  'Weak employment undermines tightening case. Bearish, especially for USD.'
   },
   gdp: {
-    better: {
-      bias: 'BEARISH', reaction: 'Bearish Gold',
-      why: 'Strong GDP growth reduces recession risk and supports the case for higher-for-longer rates. Bearish for gold short-term.',
-      expect: 'USD strengthens on growth beat. Gold faces headwinds. May hold on geopolitical bids.'
-    },
-    worse: {
-      bias: 'BULLISH', reaction: 'Bullish Gold',
-      why: 'GDP miss signals economic weakness. Recession fears rise. Flight to safe-haven assets including gold increases.',
-      expect: 'Gold rallies alongside bonds and JPY. Risk-off environment. Strong buy pressure expected.'
-    },
-    inline: {
-      bias: 'NEUTRAL', reaction: 'Neutral',
-      why: 'GDP met consensus. Market had this priced in.',
-      expect: 'Gold may trade sideways. Monitor risk sentiment for next catalyst.'
-    }
+    better: 'Strong growth supports hawkish stance. Bullish for currency.',
+    worse:  'Weak growth raises recession fears. Bearish.'
   }
 };
 
-var GOLD_WHY_MOVED = {
-  rallied: {
-    cpi: 'Gold rallied today because CPI came in softer than expected, weakening the USD and increasing market expectations of future Fed rate cuts. Lower real yields lifted gold prices as the opportunity cost of holding bullion declined.',
-    nfp: 'Gold surged following a weak NFP report. The disappointing jobs data triggered a broad USD selloff and boosted rate-cut expectations, sending gold sharply higher on increased safe-haven and monetary easing demand.',
-    fomc: 'Gold climbed strongly after the FOMC delivered a dovish message — either cutting rates or signalling future cuts. The USD dropped and real yields fell, creating a powerful tailwind for gold.',
-    geopolitical: 'Gold rallied on rising geopolitical tensions. Safe-haven demand spiked as investors moved capital out of risk assets and into gold, driving prices higher despite mixed macro data.',
-    yields: 'Gold moved higher as Treasury yields fell. Declining bond yields reduce the opportunity cost of holding non-yielding gold, making it more attractive to institutional and retail buyers alike.',
-    usd: 'Gold rallied as the USD weakened broadly. Since gold is priced in dollars, a softer USD makes gold cheaper for foreign buyers, increasing demand and pushing prices higher.'
-  },
-  'sold-off': {
-    cpi: 'Gold sold off after CPI printed hotter than expected. The stronger inflation reading reinforced expectations that the Fed will keep rates elevated for longer, boosting real yields and the USD — both headwinds for gold.',
-    nfp: 'Gold declined sharply following a strong NFP beat. Robust jobs data signalled Fed resilience, reduced rate-cut bets, and sent USD higher — all bearish for gold as a non-yielding asset.',
-    fomc: 'Gold sold off after a hawkish FOMC outcome. The Fed either hiked rates or delivered a hawkish tone, strengthening the USD and raising real yields, which are the key fundamental headwinds for gold.',
-    geopolitical: 'Gold sold off as geopolitical risk premium was unwound. Easing tensions reduced safe-haven demand, and profit-taking from recent buyers added additional selling pressure.',
-    yields: 'Gold declined as Treasury yields moved higher. Rising yields increase the opportunity cost of holding gold versus interest-bearing assets, leading to rotation out of bullion.',
-    usd: 'Gold fell as the USD strengthened sharply. A stronger dollar increases the cost of gold for foreign buyers, reducing demand and pressuring prices lower across global markets.'
-  },
-  ranging: {
-    cpi: 'Gold is consolidating today as the CPI data came broadly in line with expectations. With no major repricing of the Fed path, gold is caught between support and resistance, awaiting a fresh catalyst.',
-    nfp: 'Gold is ranging after a mixed NFP report. The headline number was in line with forecasts, giving neither bulls nor bears a clear edge. Watch for a breakout on the next macro catalyst.',
-    fomc: 'Gold is indecisive following the FOMC hold. The Fed kept rates unchanged as expected. The market is parsing the statement for directional clues — until a clear tone emerges, gold is likely to consolidate.',
-    geopolitical: 'Gold is in a consolidation phase. Geopolitical tensions remain present but are not escalating, keeping gold supported but not surging. A resolution could trigger a pullback; escalation could drive another rally.',
-    yields: 'Gold is ranging as yields trade sideways. Without a directional move in bond markets, gold lacks a clear fundamental driver and is likely to remain in a tight range until yields break out.',
-    usd: 'Gold is consolidating with a neutral USD environment. Without a strong directional move in the dollar, gold is trading technically — watch key support and resistance for the next move.'
-  }
-};
+function analyzeNewsImpact() {
+  const currency = document.getElementById('news-currency')?.value;
+  const event    = document.getElementById('news-event')?.value;
+  const outcome  = document.getElementById('news-outcome')?.value;
 
-var GOLD_SESSIONS = [
-  { name: 'London Open', time: '07:00 - 16:00 UTC', utcOpen: 7, utcClose: 16, tag: 'high', note: 'Primary gold session' },
-  { name: 'NY Open', time: '12:00 - 21:00 UTC', utcOpen: 12, utcClose: 21, tag: 'high', note: 'Most volatile for gold' },
-  { name: 'London / NY Overlap', time: '12:00 - 16:00 UTC', utcOpen: 12, utcClose: 16, tag: 'hottest', note: 'Highest gold volatility' },
-  { name: 'Asian Session', time: '00:00 - 07:00 UTC', utcOpen: 0, utcClose: 7, tag: 'low', note: 'Low gold volatility' }
-];
-
-/* ─── 1. BIAS ENGINE ─────────────────────────────────────────── */
-
-function runGoldBiasEngine() {
-  var usd      = document.getElementById('gd-usd-strength')?.value;
-  var yields   = document.getElementById('gd-yields')?.value;
-  var fed      = document.getElementById('gd-fed')?.value;
-  var risk     = document.getElementById('gd-risk')?.value;
-  var infl     = document.getElementById('gd-inflation')?.value;
-
-  if (!usd || !yields || !fed || !risk || !infl) {
-    _toast('Please fill all 5 factors to generate bias.', 'warning');
+  if (!currency || !event || !outcome) {
+    _toast('Please select all three fields.', 'warning');
     return;
   }
 
-  // Score: positive = bullish gold, negative = bearish gold
-  var score = 0;
-  var bullDrivers = [], bearDrivers = [];
+  const isBullish = outcome === 'better';
+  const pairs    = NEWS_PAIRS[currency] || { base: [], quote: [] };
+  const affected = [];
 
-  // USD
-  if (usd === 'weak')    { score += 2; bullDrivers.push('Weak USD'); }
-  if (usd === 'strong')  { score -= 2; bearDrivers.push('Strong USD'); }
-
-  // Yields
-  if (yields === 'falling') { score += 2; bullDrivers.push('Falling bond yields'); }
-  if (yields === 'rising')  { score -= 2; bearDrivers.push('Rising bond yields'); }
-
-  // Fed
-  if (fed === 'dovish')   { score += 2; bullDrivers.push('Dovish Fed expectations'); }
-  if (fed === 'hawkish')  { score -= 2; bearDrivers.push('Hawkish Fed stance'); }
-
-  // Risk
-  if (risk === 'risk-off') { score += 1; bullDrivers.push('Risk-off sentiment'); }
-  if (risk === 'risk-on')  { score -= 1; bearDrivers.push('Risk-on environment'); }
-
-  // Inflation
-  if (infl === 'rising')  { score += 1; bullDrivers.push('Rising inflation expectations'); }
-  if (infl === 'falling') { score -= 1; bearDrivers.push('Falling inflation'); }
-
-  // Max possible: +8 / -8
-  var pct = Math.round(((score + 8) / 16) * 100);
-  var conf, confLabel;
-  var absScore = Math.abs(score);
-  if (absScore >= 7)      { conf = 92; confLabel = 'VERY HIGH'; }
-  else if (absScore >= 5) { conf = 78; confLabel = 'HIGH'; }
-  else if (absScore >= 3) { conf = 62; confLabel = 'MEDIUM'; }
-  else                    { conf = 40; confLabel = 'LOW'; }
-
-  var bias, cls, arrow, setupType, entry, sl, tp, rr;
-
-  if (score >= 3) {
-    bias = 'BULLISH'; cls = 'bull'; arrow = '&#8593;';
-    setupType = score >= 6 ? 'Trend Continuation (Strong)' : 'Momentum Buy';
-    entry = 'Wait for pullback into H1 demand zone or institutional order block.';
-    sl = 'Below the most recent swing low with adequate buffer.';
-    tp = 'Target next liquidity high or previous resistance area.';
-    rr = '1:2 minimum — move stop to breakeven at +1R.';
-  } else if (score <= -3) {
-    bias = 'BEARISH'; cls = 'bear'; arrow = '&#8595;';
-    setupType = score <= -6 ? 'Trend Continuation (Strong)' : 'Momentum Sell';
-    entry = 'Wait for rejection from H1 supply zone or institutional bearish order block.';
-    sl = 'Above the most recent swing high with adequate buffer.';
-    tp = 'Target next liquidity low or previous support area.';
-    rr = '1:2 minimum — move stop to breakeven at +1R.';
+  if (isBullish) {
+    pairs.base.forEach(p  => affected.push({ pair: p, direction: 'BUY',  reason: currency + ' is base — buy the pair' }));
+    pairs.quote.forEach(p => affected.push({ pair: p, direction: 'SELL', reason: currency + ' is quote — sell the pair' }));
   } else {
-    bias = 'NEUTRAL'; cls = 'neut'; arrow = '&#8594;';
-    setupType = 'Range / No clear edge';
-    entry = 'No clear directional bias. Wait for macro clarity before entering.';
-    sl = 'N/A — sidelines recommended.';
-    tp = 'N/A — wait for a clean macro setup to form.';
-    rr = 'Do not force a trade in a neutral environment.';
+    pairs.base.forEach(p  => affected.push({ pair: p, direction: 'SELL', reason: currency + ' is base — sell the pair' }));
+    pairs.quote.forEach(p => affected.push({ pair: p, direction: 'BUY',  reason: currency + ' is quote — buy the pair' }));
   }
 
-  var bullHTML = bullDrivers.map(d => '<span class="gd-driver pos">&#10003; ' + d + '</span>').join('');
-  var bearHTML = bearDrivers.map(d => '<span class="gd-driver neg">&#10007; ' + d + '</span>').join('');
+  const result = {
+    currency,
+    event,
+    outcome,
+    isBullish,
+    bias:        isBullish ? 'BULLISH' : 'BEARISH',
+    explanation: NEWS_EXPLANATIONS[event]?.[outcome] || '',
+    pairs:       affected.slice(0, 5)
+  };
 
-  var el = document.getElementById('gd-bias-result');
-  el.style.display = 'block';
-  el.innerHTML =
-    '<div class="gd-bias-badge ' + cls + '">' + arrow + ' XAUUSD: ' + bias + '</div>' +
-    '<div class="gd-drivers">' + bullHTML + bearHTML + '</div>' +
-    '<div class="gd-conf-wrap">' +
-      '<div class="gd-conf-label"><span>Confidence</span><span>' + conf + '% — ' + confLabel + '</span></div>' +
-      '<div class="gd-conf-track"><div class="gd-conf-fill" id="gd-conf-bar" style="width:0%"></div></div>' +
-    '</div>';
-
-  setTimeout(function() {
-    var bar = document.getElementById('gd-conf-bar');
-    if (bar) bar.style.width = conf + '%';
-  }, 80);
-
-  // Also populate execution section
-  _renderGoldExecution(bias, cls, arrow, setupType, entry, sl, tp, rr, conf, confLabel, bullDrivers, bearDrivers);
+  renderNewsImpact(result);
+  const el = document.getElementById('news-impact');
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-/* ─── 5. EXECUTION INSIGHT (called by bias engine) ──────────── */
-
-function _renderGoldExecution(bias, cls, arrow, setupType, entry, sl, tp, rr, conf, confLabel, bullDrivers, bearDrivers) {
-  var el = document.getElementById('gd-execution-wrap');
+function renderNewsImpact(result) {
+  const el = document.getElementById('news-impact');
   if (!el) return;
 
-  var reasonsHTML = bullDrivers.concat(bearDrivers).slice(0, 4)
-    .map(function(d) { return '<div style="font-size:12px;color:var(--t2);padding:3px 0">&#10003; ' + d + '</div>'; })
-    .join('');
+  const biasCol  = result.isBullish ? '#00d4a1' : '#ff4560';
+  const biasBg   = result.isBullish ? 'rgba(0,212,161,.08)' : 'rgba(255,69,96,.08)';
+  const biasBdr  = result.isBullish ? 'rgba(0,212,161,.25)' : 'rgba(255,69,96,.25)';
+  const biasIcon = result.isBullish ? '↑' : '↓';
 
-  el.innerHTML =
-    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">' +
-      '<div class="gd-bias-badge ' + cls + '" style="margin-bottom:0">' + arrow + ' ' + (bias === 'BULLISH' ? 'BUY GOLD' : bias === 'BEARISH' ? 'SELL GOLD' : 'SIDELINES') + '</div>' +
-      '<div style="background:rgba(228,174,42,.1);border:1px solid rgba(228,174,42,.25);border-radius:8px;padding:6px 12px;font-size:11px;font-weight:800;color:var(--gold)">' + conf + '% ' + confLabel + '</div>' +
-    '</div>' +
-    '<div class="gd-exec-row"><div class="gd-exec-icon">&#128260;</div><div><div class="gd-exec-lbl">Setup Type</div><div class="gd-exec-val">' + setupType + '</div></div></div>' +
-    '<div class="gd-exec-row"><div class="gd-exec-icon">&#127919;</div><div><div class="gd-exec-lbl">Entry Condition</div><div class="gd-exec-val">' + entry + '</div></div></div>' +
-    '<div class="gd-exec-row"><div class="gd-exec-icon">&#128721;</div><div><div class="gd-exec-lbl">Stop Loss</div><div class="gd-exec-val">' + sl + '</div></div></div>' +
-    '<div class="gd-exec-row"><div class="gd-exec-icon">&#128176;</div><div><div class="gd-exec-lbl">Take Profit</div><div class="gd-exec-val">' + tp + '</div></div></div>' +
-    '<div class="gd-exec-row"><div class="gd-exec-icon">&#9889;</div><div><div class="gd-exec-lbl">Minimum R:R</div><div class="gd-exec-val">' + rr + '</div></div></div>' +
-    (reasonsHTML ? '<div style="margin-top:10px;padding:12px;background:var(--bg2);border-radius:10px;border:1px solid var(--bd)"><div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Bias Drivers</div>' + reasonsHTML + '</div>' : '');
+  const pairRows = result.pairs.map(p => {
+    const col = p.direction === 'BUY' ? '#00d4a1' : '#ff4560';
+    const arr = p.direction === 'BUY' ? '↑' : '↓';
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)">
+        <div style="font-size:15px;font-weight:900;color:var(--t1);letter-spacing:-.3px">${p.pair}</div>
+        <span style="font-size:12px;font-weight:800;color:${col};background:${col}18;border:1px solid ${col}40;border-radius:8px;padding:4px 12px">
+          ${arr} ${p.direction}
+        </span>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="background:${biasBg};border:1px solid ${biasBdr};border-radius:12px;padding:14px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px">
+          📢 News Impact — ${result.currency}
+        </div>
+        <div style="font-size:11px;color:var(--t2)">
+          ${result.outcome === 'better' ? 'Better than expected' : 'Worse than expected'}
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 16px;border-radius:100px;background:${biasBg};border:1px solid ${biasBdr}">
+        <span style="font-size:20px;font-weight:900;color:${biasCol}">${biasIcon}</span>
+        <span style="font-size:14px;font-weight:900;color:${biasCol};letter-spacing:.5px">${result.bias}</span>
+      </div>
+    </div>
+
+    <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Why?</div>
+      <div style="font-size:13px;color:var(--t1);line-height:1.75">${result.explanation}</div>
+    </div>
+
+    <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:12px;padding:14px 16px">
+      <div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Affected Pairs</div>
+      <div style="font-size:11px;color:var(--t2);margin-bottom:8px">Based on ${result.currency} ${result.bias === 'BULLISH' ? 'strength' : 'weakness'}</div>
+      ${pairRows}
+      <div style="padding-top:12px;font-size:11px;color:var(--t3);line-height:1.6">
+        ⚠️ Wait for confirmation on your chart before entering.
+      </div>
+    </div>`;
 }
 
-/* ─── 2. WHY GOLD MOVED ──────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════
+   WEEKLY BIAS BUILDER
+   ═══════════════════════════════════════════════════════════ */
 
+const WBB_PAIRS = ['GBP/USD','EUR/USD','USD/JPY','AUD/USD','NZD/USD','USD/CAD','EUR/JPY','GBP/JPY'];
+
+function _initWBBInputs() {
+  const wrap = document.getElementById('wbb-pairs-wrap');
+  if (!wrap) return;
+
+  let html = '';
+  WBB_PAIRS.forEach(pair => {
+    html += `<div class="bias-pair-row">
+      <div class="bias-pair-name">${pair}</div>
+      <div class="bias-btns">
+        <button class="bias-btn bull" onclick="wbbSetBias('${pair}','bull',this)">Bull</button>
+        <button class="bias-btn neu" onclick="wbbSetBias('${pair}','neu',this)">Neu</button>
+        <button class="bias-btn bear" onclick="wbbSetBias('${pair}','bear',this)">Bear</button>
+      </div>
+    </div>`;
+  });
+  wrap.innerHTML = html;
+}
+
+function wbbSetBias(pair, bias, btn) {
+  btn.parentElement.querySelectorAll('.bias-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function saveWeeklyBias() {
+  const biases = {};
+  WBB_PAIRS.forEach(pair => {
+    const btn = document.querySelector(`[onclick*="wbbSetBias('${pair}"]`);
+    const active = document.querySelector(`[onclick*="wbbSetBias('${pair}"] .active`);
+    if (active) {
+      biases[pair] = active.textContent.toLowerCase();
+    }
+  });
+  
+  if (S.user) {
+    try { localStorage.setItem('tes_wbb_' + S.user.uid, JSON.stringify(biases)); }
+    catch { console.warn('[TES] localStorage save failed'); }
+  }
+  
+  _toast('Weekly bias saved ✓', 'success');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TRADE REVIEW & ANALYTICS
+   ═══════════════════════════════════════════════════════════ */
+
+function _analyseTradeHistory() {
+  const trades = S.trades;
+  if (!trades || trades.length < 3) return null;
+
+  const wins   = trades.filter(t => t.outcome === 'win');
+  const losses = trades.filter(t => t.outcome === 'loss');
+  const be     = trades.filter(t => t.outcome === 'be');
+  const total  = trades.length;
+  const wr     = Math.round(wins.length / total * 100);
+
+  const avgRR = wins.length
+    ? (wins.reduce((a, t) => a + parseFloat(t.rr || 0), 0) / wins.length).toFixed(2)
+    : 0;
+
+  const netR = trades.reduce((a, t) => {
+    return a + (t.outcome === 'win' ? parseFloat(t.rr || 1) : t.outcome === 'loss' ? -1 : 0);
+  }, 0);
+
+  const pairMap = {};
+  trades.forEach(t => {
+    if (!t.pair) return;
+    if (!pairMap[t.pair]) pairMap[t.pair] = { wins: 0, losses: 0, total: 0 };
+    pairMap[t.pair].total++;
+    if (t.outcome === 'win')  pairMap[t.pair].wins++;
+    if (t.outcome === 'loss') pairMap[t.pair].losses++;
+  });
+
+  const pairList = Object.entries(pairMap).filter(([, d]) => d.total >= 2);
+  const bestPair = pairList.sort((a, b) => {
+    return (b[1].wins / b[1].total) - (a[1].wins / a[1].total);
+  })[0];
+  const worstPair = pairList.sort((a, b) => {
+    return (a[1].wins / a[1].total) - (b[1].wins / b[1].total);
+  })[0];
+
+  const sessionMap = {};
+  trades.forEach(t => {
+    if (!t.session) return;
+    if (!sessionMap[t.session]) sessionMap[t.session] = { wins: 0, total: 0 };
+    sessionMap[t.session].total++;
+    if (t.outcome === 'win') sessionMap[t.session].wins++;
+  });
+
+  const sessionList = Object.entries(sessionMap).filter(([, d]) => d.total >= 2);
+  const bestSession = sessionList.sort((a, b) => {
+    return (b[1].wins / b[1].total) - (a[1].wins / a[1].total);
+  })[0];
+
+  let streak = 0, streakType = '';
+  for (let i = 0; i < trades.length; i++) {
+    const o = trades[i].outcome;
+    if (i === 0) { streakType = o; streak = 1; continue; }
+    if (o === streakType) streak++;
+    else break;
+  }
+
+  const last5    = trades.slice(0, 5);
+  const last5WR  = Math.round(last5.filter(t => t.outcome === 'win').length / last5.length * 100);
+
+  const buyTrades  = trades.filter(t => t.direction === 'BUY');
+  const sellTrades = trades.filter(t => t.direction === 'SELL');
+  const buyWR      = buyTrades.length  ? Math.round(buyTrades.filter(t => t.outcome === 'win').length / buyTrades.length * 100)  : null;
+  const sellWR     = sellTrades.length ? Math.round(sellTrades.filter(t => t.outcome === 'win').length / sellTrades.length * 100) : null;
+
+  return {
+    total, wins: wins.length, losses: losses.length, be: be.length,
+    wr, avgRR, netR: netR.toFixed(1),
+    bestPair, worstPair, bestSession,
+    streak, streakType,
+    last5WR, last5Count: last5.length,
+    buyWR, sellWR,
+    buyCount: buyTrades.length, sellCount: sellTrades.length
+  };
+}
+
+function _generateCoachingNote(d) {
+  const notes = [];
+
+  if (d.wr >= 60) {
+    notes.push(`Your win rate of ${d.wr}% is strong. Protect this edge by not overtrading.`);
+  } else if (d.wr >= 45) {
+    notes.push(`A ${d.wr}% win rate is workable if R:R is consistent. Your average winner is ${d.avgRR}R.`);
+  } else {
+    notes.push(`Your win rate is ${d.wr}%. Review your last 5 losses and identify entry issues.`);
+  }
+
+  if (parseFloat(d.netR) > 0) {
+    notes.push(`You're net positive at +${d.netR}R. You are profitable.`);
+  } else {
+    notes.push(`Your net R is ${d.netR}R. Cut losses short and let winners run.`);
+  }
+
+  if (d.bestPair) {
+    const [pair, stats] = d.bestPair;
+    const pairWR = Math.round(stats.wins / stats.total * 100);
+    notes.push(`Your strongest pair is ${pair} (${pairWR}% WR). Prioritise this pair.`);
+  }
+
+  if (d.bestSession) {
+    const [sess, stats] = d.bestSession;
+    const sessWR = Math.round(stats.wins / stats.total * 100);
+    notes.push(`You trade best in ${sess} (${sessWR}% WR). Concentrate your energy here.`);
+  }
+
+  if (d.last5Count >= 5 && d.last5WR <= 30) {
+    notes.push(`Your recent form is concerning — ${d.last5WR}% over last 5 trades. Take a break.`);
+  }
+
+  if (d.streak >= 3) {
+    if (d.streakType === 'loss') {
+      notes.push(`You've had ${d.streak} consecutive losses. Step back and reset your mindset.`);
+    }
+  }
+
+  return notes;
+}
+
+function renderTradeReview() {
+  const el = document.getElementById('trade-review-card');
+  if (!el) return;
+
+  const d = _analyseTradeHistory();
+
+  if (!d) {
+    el.innerHTML = '<div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">📋 Trade Review</div><p style="color:var(--t3);font-size:13px">Log at least 3 trades to unlock your coaching note.</p>';
+    return;
+  }
+
+  const notes    = _generateCoachingNote(d);
+  const netCol   = parseFloat(d.netR) >= 0 ? 'var(--green)' : 'var(--red)';
+  const wrCol    = d.wr >= 55 ? 'var(--green)' : d.wr >= 40 ? 'var(--gold)' : 'var(--red)';
+
+  el.innerHTML = `
+    <div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:14px">📋 Weekly Trade Review</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px">
+      <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:10px;padding:10px;text-align:center">
+        <div style="font-size:16px;font-weight:900;color:${wrCol};margin-bottom:3px">${d.wr}%</div>
+        <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.5px">Win Rate</div>
+      </div>
+      <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:10px;padding:10px;text-align:center">
+        <div style="font-size:16px;font-weight:900;color:${netCol};margin-bottom:3px">${(parseFloat(d.netR) >= 0 ? '+' : '')}${d.netR}R</div>
+        <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.5px">Net R</div>
+      </div>
+      <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:10px;padding:10px;text-align:center">
+        <div style="font-size:16px;font-weight:900;color:var(--gold);margin-bottom:3px">1:${d.avgRR}</div>
+        <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.5px">Avg R:R</div>
+      </div>
+      <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:10px;padding:10px;text-align:center">
+        <div style="font-size:16px;font-weight:900;color:var(--t1);margin-bottom:3px">${d.total}</div>
+        <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.5px">Total</div>
+      </div>
+    </div>
+    <div style="font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">🧠 Coaching Notes</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      ${notes.map((note, i) => `
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <div style="width:22px;height:22px;border-radius:50%;background:rgba(228,174,42,.1);border:1px solid rgba(228,174,42,.3);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:var(--gold);flex-shrink:0">${i + 1}</div>
+          <div style="font-size:13px;color:var(--t1);line-height:1.7">${note}</div>
+        </div>`).join('')}
+    </div>`;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   GOLD DESK — Implemented in app.js
+   ═══════════════════════════════════════════════════════════ */
+
+/* Gold Bias Engine */
+function runGoldBiasEngine() {
+  const usd      = document.getElementById('gd-usd-strength')?.value;
+  const yields   = document.getElementById('gd-yields')?.value;
+  const fed      = document.getElementById('gd-fed')?.value;
+  const risk     = document.getElementById('gd-risk')?.value;
+  const infl     = document.getElementById('gd-inflation')?.value;
+
+  if (!usd || !yields || !fed || !risk || !infl) {
+    _toast('Please fill all 5 factors.', 'warning');
+    return;
+  }
+
+  let score = 0;
+  if (usd === 'weak')    score += 1;
+  if (usd === 'strong')  score -= 1;
+  if (yields === 'falling') score += 1;
+  if (yields === 'rising')  score -= 1;
+  if (fed === 'dovish')   score += 1;
+  if (fed === 'hawkish')  score -= 1;
+  if (risk === 'risk-off') score += 1;
+  if (risk === 'risk-on')  score -= 1;
+  if (infl === 'rising')  score -= 1;
+  if (infl === 'falling') score += 1;
+
+  const conf = Math.min(95, Math.max(40, 60 + Math.abs(score) * 7));
+  const bias = score >= 2 ? 'BULLISH' : score <= -2 ? 'BEARISH' : 'NEUTRAL';
+  const cls = bias.toLowerCase();
+
+  const resultDiv = document.getElementById('gd-bias-result');
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = `
+    <div class="gd-bias-badge ${cls}">
+      ${bias === 'BULLISH' ? '↑' : bias === 'BEARISH' ? '↓' : '→'} ${bias}
+    </div>
+    <div class="gd-conf-wrap">
+      <div class="gd-conf-label"><span>Confidence</span><span>${Math.round(conf)}%</span></div>
+      <div class="gd-conf-track"><div class="gd-conf-fill" style="width:${conf}%"></div></div>
+    </div>
+    <div style="font-size:12px;color:var(--t2);margin-top:12px">Macro score: ${score > 0 ? '+' : ''}${score}</div>`;
+
+  _renderGoldExecution(bias, cls, conf);
+}
+
+function _renderGoldExecution(bias, cls, conf) {
+  const el = document.getElementById('gd-execution-wrap');
+  if (!el) return;
+
+  let execHtml = '';
+  if (bias === 'BULLISH') {
+    execHtml = `
+      <div class="gd-exec-row"><div class="gd-exec-icon">📈</div><div><div class="gd-exec-lbl">Entry Zone</div><div class="gd-exec-val">Support cluster — wait for bounce</div></div></div>
+      <div class="gd-exec-row"><div class="gd-exec-icon">🛑</div><div><div class="gd-exec-lbl">Stop Loss</div><div class="gd-exec-val">Below entry swing low</div></div></div>
+      <div class="gd-exec-row"><div class="gd-exec-icon">🎯</div><div><div class="gd-exec-lbl">Take Profit</div><div class="gd-exec-val">Next resistance | TP1 & TP2</div></div></div>
+      <div class="gd-exec-row"><div class="gd-exec-icon">⚡</div><div><div class="gd-exec-lbl">Setup Type</div><div class="gd-exec-val">Trend Continuation (Strong)</div></div></div>`;
+  } else if (bias === 'BEARISH') {
+    execHtml = `
+      <div class="gd-exec-row"><div class="gd-exec-icon">📉</div><div><div class="gd-exec-lbl">Entry Zone</div><div class="gd-exec-val">Resistance cluster — wait for rejection</div></div></div>
+      <div class="gd-exec-row"><div class="gd-exec-icon">🛑</div><div><div class="gd-exec-lbl">Stop Loss</div><div class="gd-exec-val">Above entry swing high</div></div></div>
+      <div class="gd-exec-row"><div class="gd-exec-icon">🎯</div><div><div class="gd-exec-lbl">Take Profit</div><div class="gd-exec-val">Next support | TP1 & TP2</div></div></div>
+      <div class="gd-exec-row"><div class="gd-exec-icon">⚡</div><div><div class="gd-exec-lbl">Setup Type</div><div class="gd-exec-val">Trend Continuation (Strong)</div></div></div>`;
+  } else {
+    execHtml = `
+      <div class="gd-exec-row"><div class="gd-exec-icon">⏸️</div><div><div class="gd-exec-lbl">Recommendation</div><div class="gd-exec-val">No clear bias. Wait for macro clarity or breakout.</div></div></div>`;
+  }
+  el.innerHTML = execHtml;
+}
+
+/* Why Gold Moved */
 function runWhyGoldMoved() {
-  var dir    = document.getElementById('gd-moved-direction')?.value;
-  var driver = document.getElementById('gd-moved-driver')?.value;
+  const dir    = document.getElementById('gd-moved-direction')?.value;
+  const driver = document.getElementById('gd-moved-driver')?.value;
 
   if (!dir || !driver) {
     _toast('Please select both direction and driver.', 'warning');
     return;
   }
 
-  var explanation = (GOLD_WHY_MOVED[dir] && GOLD_WHY_MOVED[dir][driver])
-    ? GOLD_WHY_MOVED[dir][driver]
-    : 'No explanation available for this combination. Please verify your data and try again.';
+  const explanations = {
+    rallied: {
+      cpi: 'Soft CPI data weakened the USD and increased rate-cut expectations. Gold rallied.',
+      nfp: 'Weak NFP triggered USD selloff. Gold surged on safe-haven flows.',
+      fomc: 'Dovish Fed signaling cuts. USD dumped, gold rallied strongly.',
+      geopolitical: 'Rising geopolitical risk drove safe-haven demand into gold.',
+      yields: 'Treasury yields fell. Lower real yields supported gold demand.',
+      usd: 'DXY collapsed. Weaker dollar lifted gold prices.'
+    },
+    'sold-off': {
+      cpi: 'Hot CPI crushed rate-cut hopes. Gold dumped on stronger dollar.',
+      nfp: 'Strong NFP boosted USD and real yields. Gold sold off.',
+      fomc: 'Hawkish Fed outlook pushed gold lower.',
+      geopolitical: 'Risk premium unwound. Profit-taking accelerated.',
+      yields: 'Real yields spiked. Gold fell sharply.',
+      usd: 'DXY surged. Strong dollar triggered liquidation.'
+    },
+    ranging: {
+      cpi: 'CPI in line — no surprise. Gold consolidating.',
+      nfp: 'NFP met expectations. Gold awaiting next catalyst.',
+      fomc: 'Hold confirmed. Gold choppy pending direction.',
+      geopolitical: 'Tensions unchanged. Gold range-bound.',
+      yields: 'Yields flat. Gold stuck in range.',
+      usd: 'DXY neutral. Gold trading sideways.'
+    }
+  };
 
-  var icon = dir === 'rallied' ? '&#8593;' : dir === 'sold-off' ? '&#8595;' : '&#8596;';
-  var dirColor = dir === 'rallied' ? '#00d4a1' : dir === 'sold-off' ? '#ff4560' : 'var(--gold)';
-
-  var el = document.getElementById('gd-moved-result');
-  el.style.display = 'block';
-  el.innerHTML =
-    '<div style="font-size:11px;font-weight:700;color:' + dirColor + ';text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px">' +
-      icon + ' Gold ' + (dir === 'sold-off' ? 'Sold Off' : dir.charAt(0).toUpperCase() + dir.slice(1)) + ' — ' + driver.toUpperCase() +
-    '</div>' +
-    '<div class="gd-moved-box">' + explanation + '</div>';
+  const explanation = explanations[dir]?.[driver] || 'No explanation available.';
+  const resultDiv = document.getElementById('gd-moved-result');
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = `<div class="gd-moved-box">${explanation}</div>`;
 }
 
-/* ─── 3. NEWS INTERPRETER ────────────────────────────────────── */
-
+/* Gold News Interpreter */
 function runGoldNewsInterpreter() {
-  var event   = document.getElementById('gd-news-event')?.value;
-  var outcome = document.getElementById('gd-news-outcome')?.value;
+  const event   = document.getElementById('gd-news-event')?.value;
+  const outcome = document.getElementById('gd-news-outcome')?.value;
 
   if (!event || !outcome) {
     _toast('Please select both event and outcome.', 'warning');
     return;
   }
 
-  var logic = GOLD_NEWS_LOGIC[event] && GOLD_NEWS_LOGIC[event][outcome];
+  const reactions = {
+    cpi: {
+      better: 'BEARISH: Hot inflation → Fed hikes → gold down',
+      worse: 'BULLISH: Soft CPI → rate cuts → gold up',
+      inline: 'NEUTRAL'
+    },
+    nfp: {
+      better: 'BEARISH: Strong jobs → USD up → gold down',
+      worse: 'BULLISH: Weak jobs → gold up',
+      inline: 'NEUTRAL'
+    },
+    fomc: {
+      hike: 'BEARISH: Immediate USD spike',
+      hold: 'SLIGHTLY BULLISH: Pause confirmed',
+      cut: 'VERY BULLISH: Gold explodes higher'
+    },
+    employment: {
+      better: 'BEARISH',
+      worse: 'BULLISH',
+      inline: 'NEUTRAL'
+    },
+    gdp: {
+      better: 'BEARISH: Strong growth',
+      worse: 'BULLISH: Weak growth',
+      inline: 'NEUTRAL'
+    }
+  };
 
-  if (!logic) {
-    _toast('That combination is not applicable for this event type.', 'warning');
-    return;
-  }
+  const reaction = reactions[event]?.[outcome];
+  if (!reaction) { _toast('That combination is not applicable.', 'warning'); return; }
 
-  var isBull = logic.bias === 'BULLISH';
-  var isBear = logic.bias === 'BEARISH';
-  var biasColor = isBull ? '#00d4a1' : isBear ? '#ff4560' : 'var(--gold)';
-  var biasArrow = isBull ? '&#8593;' : isBear ? '&#8595;' : '&#8594;';
-  var biasCls   = isBull ? 'bull' : isBear ? 'bear' : 'neut';
-
-  var el = document.getElementById('gd-news-result');
-  el.classList.add('show');
-  el.innerHTML =
-    '<div style="font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">' +
-      event.toUpperCase() + ' &mdash; ' + outcome + '</div>' +
-    '<div class="gd-bias-badge ' + biasCls + '" style="margin-bottom:12px">' + biasArrow + ' ' + logic.reaction + '</div>' +
-    '<div style="margin-bottom:12px">' +
-      '<div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Why?</div>' +
-      '<div class="gd-moved-box">' + logic.why + '</div>' +
-    '</div>' +
-    '<div>' +
-      '<div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">What traders expect</div>' +
-      '<div style="font-size:13px;color:var(--t1);line-height:1.6">' + logic.expect + '</div>' +
-    '</div>';
+  const resultDiv = document.getElementById('gd-news-result');
+  resultDiv.classList.add('show');
+  resultDiv.innerHTML = `<strong style="color:var(--gold)">Gold Reaction:</strong> ${reaction}`;
 }
 
-/* ─── 6. SESSION VOLATILITY TIMER ────────────────────────────── */
-
+/* Gold Sessions */
 function _renderGoldSessions() {
-  var el = document.getElementById('gd-sessions-wrap');
-  var adv = document.getElementById('gd-session-advice');
+  const el = document.getElementById('gd-sessions-wrap');
   if (!el) return;
 
-  var now = new Date();
-  var utcH = now.getUTCHours() + now.getUTCMinutes() / 60;
+  const now = new Date();
+  const utcHour = now.getUTCHours();
+  const sessions = [
+    { name: 'Asia (Tokyo)', utcOpen: 0, utcClose: 8, vol: 'Moderate' },
+    { name: 'London', utcOpen: 8, utcClose: 16, vol: 'High' },
+    { name: 'New York', utcOpen: 13, utcClose: 22, vol: 'High' },
+    { name: 'Sydney', utcOpen: 22, utcClose: 6, nextDay: true, vol: 'Low' }
+  ];
 
-  var html = '';
-  var overlapActive = utcH >= 12 && utcH < 16;
-  var activeCount = 0;
-
-  GOLD_SESSIONS.forEach(function(s) {
-    var isOpen;
-    if (s.utcOpen < s.utcClose) {
-      isOpen = utcH >= s.utcOpen && utcH < s.utcClose;
-    } else {
-      isOpen = utcH >= s.utcOpen || utcH < s.utcClose;
-    }
-
-    var tag, tagCls;
-    if (s.tag === 'hottest' && isOpen) {
-      tag = '&#128293; Hottest — Trade Now'; tagCls = 'hot';
-    } else if (s.tag === 'hottest' && !isOpen) {
-      tag = 'Not active'; tagCls = 'closed';
-    } else if (isOpen) {
-      tag = s.tag === 'high' ? 'Open &#10003;' : 'Open (low vol)'; tagCls = 'open';
-      activeCount++;
-    } else {
-      tag = 'Closed'; tagCls = 'closed';
-    }
-
-    html +=
-      '<div class="gd-session-row">' +
-        '<div>' +
-          '<div class="gd-session-name">' + s.name + '</div>' +
-          '<div class="gd-session-time">' + s.time + ' &mdash; ' + s.note + '</div>' +
-        '</div>' +
-        '<span class="gd-session-tag ' + tagCls + '">' + tag + '</span>' +
-      '</div>';
+  let html = '';
+  sessions.forEach(s => {
+    let isOpen = false;
+    if (s.nextDay) isOpen = (utcHour >= s.utcOpen || utcHour < s.utcClose);
+    else isOpen = (utcHour >= s.utcOpen && utcHour < s.utcClose);
+    const statusClass = isOpen ? 'open' : 'closed';
+    const statusText = isOpen ? 'OPEN' : 'CLOSED';
+    html += `<div class="gd-session-row">
+              <div><span class="gd-session-name">${s.name}</span><div class="gd-session-time">${s.utcOpen}:00 – ${s.utcClose}:00 UTC</div></div>
+              <div><span class="gd-session-tag ${statusClass}">${statusText}</span><span class="gd-session-tag hot" style="margin-left:6px">Vol: ${s.vol}</span></div>
+            </div>`;
   });
-
   el.innerHTML = html;
 
-  if (adv) {
-    if (overlapActive) {
-      adv.innerHTML = '<span style="color:var(--gold);font-weight:700">&#128293; London/NY overlap is active — highest gold volatility now. Best window to trade XAUUSD.</span>';
-    } else if (activeCount > 0) {
-      adv.innerHTML = '<span style="color:#00d4a1">Sessions are open. Moderate trading conditions.</span>';
-    } else {
-      adv.innerHTML = '<span style="color:var(--t2)">No major sessions open. Low volatility expected. Prepare for London open.</span>';
-    }
-  }
+  const advice = document.getElementById('gd-session-advice');
+  if (advice) advice.innerHTML = '💡 Best liquidity: London (8:00 UTC) and NY (13:00 UTC)';
 }
-
-/* ─── GOLD PAGE INIT (called by goPage) ──────────────────────── */
 
 function _initGoldPage() {
   _renderGoldSessions();
-  // Refresh sessions every 60 seconds while on page
-  if (window._goldSessionInterval) clearInterval(window._goldSessionInterval);
-  window._goldSessionInterval = setInterval(_renderGoldSessions, 60000);
+  if (_goldSessionInterval) clearInterval(_goldSessionInterval);
+  _goldSessionInterval = setInterval(_renderGoldSessions, 60000);
 }
 
 /* ═══════════════════════════════════════════════════════════
-   SESSION 3 — TRADE EXECUTION INSIGHT ENGINE
-   ═══════════════════════════════════════════════════════════ */
-
-function generateTradeInsight(rankings) {
-  if (!rankings || rankings.length < 2) return null;
-  const fx      = rankings.filter(r => r.currency !== 'XAU');
-  const xau     = rankings.find(r => r.currency === 'XAU');
-  const strong  = fx[0];
-  const weak    = fx[fx.length - 1];
-  const diff    = parseFloat((strong.score - weak.score).toFixed(2));
-
-  let confidence, setup, plan;
-
-  if (diff > 4) {
-    confidence = 'HIGH';
-    setup      = 'Trend Continuation';
-    plan       = `Strong fundamental divergence detected. ${strong.currency} is significantly outperforming ${weak.currency}. Look for pullbacks on ${strong.currency + weak.currency} into premium/discount zones on H1 for continuation entries. Target 1:2 minimum R:R. Avoid counter-trend trades today.`;
-  } else if (diff > 2) {
-    confidence = 'MEDIUM';
-    setup      = 'Momentum Setup';
-    plan       = `Moderate divergence between ${strong.currency} and ${weak.currency}. Bias favours ${strong.currency + weak.currency} longs, but wait for confirmation on M15 before entering. Use reduced position size. Watch for news events that could shift momentum.`;
-  } else {
-    confidence = 'LOW';
-    setup      = 'No Clear Edge';
-    plan       = `Currencies are closely scored. No dominant bias detected. Best action: stay on the sidelines or paper trade only. Wait for macro events or CB announcements to shift the landscape before committing capital.`;
-  }
-
-  let xauNote = '';
-  if (xau) {
-    const globalRisk = document.getElementById('cs-global-risk')?.value || '';
-    if (globalRisk === 'risk-off' && xau.score > 2) {
-      xauNote = `Gold (XAU) score is elevated at +${xau.score} — confirms risk-off environment. Consider XAUUSD longs as a secondary play.`;
-    } else if (globalRisk === 'risk-on' && xau.score < 0) {
-      xauNote = `Gold (XAU) score is weak at ${xau.score} — confirms risk-on environment. Favour commodity currencies (AUD, NZD, CAD).`;
-    }
-  }
-
-  return {
-    pair:       strong.currency + weak.currency,
-    direction:  'BUY ' + strong.currency + ' / SELL ' + weak.currency,
-    confidence,
-    setup,
-    plan,
-    xauNote,
-    scoreDiff:  diff,
-    strong:     strong.currency,
-    weak:       weak.currency
-  };
-}
-
-async function renderAISummary(rankings) {
-  const el = document.getElementById('ai-summary-box');
-  if (!el) return;
-  el.innerHTML = `<div style="text-align:center;padding:20px"><p style="font-size:13px;color:#5a6a8a">🤖 AI Bias Analysis coming soon.</p></div>`;
-  return;
-}
-
-function renderTradeInsight(rankings) {
-  const el = document.getElementById('trade-insight');
-  if (!el) return;
-
-  const insight = generateTradeInsight(rankings);
-
-  if (!insight) {
-    el.innerHTML = '<p style="color:#5a6a8a;font-size:13px;padding:12px 0">Run analysis to generate trade insight.</p>';
-    return;
-  }
-
-  const confColor = insight.confidence === 'HIGH'   ? '#00d4a1'
-                  : insight.confidence === 'MEDIUM' ? '#e4ae2a'
-                  : '#ff4560';
-
-  const confBg    = insight.confidence === 'HIGH'   ? 'rgba(0,212,161,.1)'
-                  : insight.confidence === 'MEDIUM' ? 'rgba(228,174,42,.1)'
-                  : 'rgba(255,69,96,.1)';
-
-  const dirCol    = insight.direction.startsWith('BUY') ? '#00d4a1' : '#ff4560';
-
-  el.innerHTML = `
-    <div style="margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-      <div>
-        <div style="font-size:11px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">⚡ Trade Execution Insight</div>
-        <div style="font-size:22px;font-weight:900;letter-spacing:-.5px;color:var(--t1)">
-          ${insight.pair}
-          <span style="font-size:14px;font-weight:700;color:${dirCol};margin-left:8px">${insight.direction}</span>
-        </div>
-      </div>
-      <div style="text-align:right">
-        <div style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:100px;background:${confBg};border:1px solid ${confColor}40">
-          <div style="width:7px;height:7px;border-radius:50%;background:${confColor}"></div>
-          <span style="font-size:12px;font-weight:800;color:${confColor};letter-spacing:.5px">
-            ${insight.confidence} CONFIDENCE
-          </span>
-        </div>
-        <div style="font-size:11px;color:#5a6a8a;margin-top:4px">Score Δ ${insight.scoreDiff}</div>
-      </div>
-    </div>
-
-    <div style="background:#0c1525;border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px;margin-bottom:12px">
-      <div style="font-size:10px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Setup Type</div>
-      <div style="font-size:14px;font-weight:700;color:var(--gold)">${insight.setup}</div>
-    </div>
-
-    <div style="background:#0c1525;border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px;margin-bottom:${insight.xauNote ? '12px' : '0'}">
-      <div style="font-size:10px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Execution Plan</div>
-      <div style="font-size:13px;color:var(--t1);line-height:1.7">${insight.plan}</div>
-    </div>
-
-    ${insight.xauNote ? `<div style="background:rgba(228,174,42,.06);border:1px solid rgba(228,174,42,.2);border-radius:10px;padding:12px;margin-top:0">
-      <div style="font-size:12px;color:#e4ae2a;line-height:1.6">🥇 ${insight.xauNote}</div>
-    </div>` : ''}`;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   SESSION 3 — ONE-CLICK TRADE PLAN GENERATOR
-   ═══════════════════════════════════════════════════════════ */
-
-function generateTradePlan(pair, rankings) {
-  if (!rankings || rankings.length < 2) return null;
-
-  const fx = rankings.filter(r => r.currency !== 'XAU');
-
-  let base, quote;
-
-  if (pair) {
-    const currencies = ['USD','EUR','GBP','JPY','AUD','NZD','CAD','CHF','XAU'];
-    base  = currencies.find(c => pair.startsWith(c));
-    quote = currencies.find(c => pair.endsWith(c) && c !== base);
-  }
-
-  if (!base || !quote) {
-    base  = fx[0]?.currency;
-    quote = fx[fx.length - 1]?.currency;
-  }
-
-  const baseRank  = rankings.find(r => r.currency === base);
-  const quoteRank = rankings.find(r => r.currency === quote);
-
-  if (!baseRank || !quoteRank) return null;
-
-  const diff      = parseFloat((baseRank.score - quoteRank.score).toFixed(2));
-  const direction = diff >= 0 ? 'BUY' : 'SELL';
-  const strong    = diff >= 0 ? base  : quote;
-  const weak      = diff >= 0 ? quote : base;
-  const absDiff   = Math.abs(diff);
-
-  const confidence = absDiff > 4 ? 'HIGH' : absDiff > 2 ? 'MEDIUM' : 'LOW';
-
-  const entry = direction === 'BUY'
-    ? 'Wait for a pullback into a premium demand zone on H1. Look for a base forming before entry. Avoid chasing the move.'
-    : 'Wait for a retracement into a supply zone on H1. Confirm rejection with a bearish structure shift on M15 before entry.';
-
-  const stopLoss = direction === 'BUY'
-    ? 'Place stop loss below the most recent swing low or below the demand zone base. Minimum 10 pips buffer.'
-    : 'Place stop loss above the most recent swing high or above the supply zone base. Minimum 10 pips buffer.';
-
-  const takeProfit = direction === 'BUY'
-    ? 'Target the next resistance level or previous swing high. Minimum 1:2 R:R. Consider partial close at 1R.'
-    : 'Target the next support level or previous swing low. Minimum 1:2 R:R. Consider partial close at 1R.';
-
-  const riskNote = `Do not risk more than 1–2% of your account on this trade. Score divergence is ${absDiff.toFixed(1)} — ${confidence.toLowerCase()} confidence setup. ${confidence === 'LOW' ? 'Consider sitting out or paper trading only.' : confidence === 'MEDIUM' ? 'Wait for strong M15 confirmation before entry.' : 'Conditions are favourable but always respect your stop.'}`;
-
-  return {
-    pair:       base + quote,
-    direction,
-    bias:       strong + ' strong / ' + weak + ' weak',
-    entry,
-    stopLoss,
-    takeProfit,
-    riskNote,
-    confidence,
-    scoreDiff:  absDiff
-  };
-}
-
-function generateTopTradePlan() {
-  const rankings = S.rankings;
-  if (!rankings || rankings.length < 2) {
-    _toast('Run currency analysis first.', 'warning');
-    return;
-  }
-  renderTradePlan(null, rankings);
-  const el = document.getElementById('trade-plan');
-  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-function renderTradePlan(pair, rankings) {
-  const el = document.getElementById('trade-plan');
-  if (!el) return;
-
-  if (!rankings || rankings.length < 2) {
-    el.innerHTML = '<p style="color:var(--t3);font-size:13px;padding:12px 0">Run analysis to generate a trade plan.</p>';
-    return;
-  }
-
-  const plan = generateTradePlan(pair, rankings);
-
-  if (!plan) {
-    el.innerHTML = '<p style="color:var(--t3);font-size:13px;padding:12px 0">Could not generate plan. Check rankings.</p>';
-    return;
-  }
-
-  const dirCol   = plan.direction === 'BUY' ? '#00d4a1' : '#ff4560';
-  const dirArrow = plan.direction === 'BUY' ? '↑' : '↓';
-  const confCol  = plan.confidence === 'HIGH' ? '#00d4a1' : plan.confidence === 'MEDIUM' ? '#e4ae2a' : '#ff4560';
-  const confBg   = plan.confidence === 'HIGH' ? 'rgba(0,212,161,.08)' : plan.confidence === 'MEDIUM' ? 'rgba(228,174,42,.08)' : 'rgba(255,69,96,.08)';
-
-  const row = (icon, label, value, valColor) => `
-    <div style="padding:12px 0;border-bottom:1px solid var(--bd);display:flex;align-items:flex-start;gap:12px">
-      <div style="width:32px;height:32px;border-radius:8px;background:var(--bg1);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">${icon}</div>
-      <div style="flex:1">
-        <div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">${label}</div>
-        <div style="font-size:13px;color:${valColor || 'var(--t1)'};line-height:1.6;font-weight:500">${value}</div>
-      </div>
-    </div>`;
-
-  el.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
-      <div>
-        <div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">⚡ Trade Plan</div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <span style="font-size:26px;font-weight:900;letter-spacing:-.5px;color:var(--t1)">${plan.pair}</span>
-          <span style="font-size:15px;font-weight:800;color:${dirCol};background:${dirCol}18;border:1px solid ${dirCol}40;border-radius:8px;padding:4px 12px">
-            ${dirArrow} ${plan.direction}
-          </span>
-          <span style="font-size:11px;font-weight:800;color:${confCol};background:${confBg};border:1px solid ${confCol}30;border-radius:20px;padding:3px 10px">
-            ${plan.confidence} CONF
-          </span>
-        </div>
-        <div style="font-size:12px;color:var(--t2);margin-top:6px">${plan.bias}</div>
-      </div>
-      <button onclick="generateTopTradePlan()"
-        style="background:var(--bg3);border:1px solid var(--bd2);color:var(--gold);border-radius:10px;padding:9px 16px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0">
-        ↻ Regenerate
-      </button>
-    </div>
-
-    <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:12px;padding:0 14px;overflow:hidden">
-      ${row('🎯','Entry Condition', plan.entry)}
-      ${row('🛑','Stop Loss', plan.stopLoss, '#ff4560')}
-      ${row('💰','Take Profit', plan.takeProfit, '#00d4a1')}
-      <div style="padding:12px 0;display:flex;align-items:flex-start;gap:12px">
-        <div style="width:32px;height:32px;border-radius:8px;background:var(--bg1);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">⚠️</div>
-        <div style="flex:1">
-          <div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Risk Note</div>
-          <div style="font-size:13px;color:var(--gold);line-height:1.6;font-weight:500">${plan.riskNote}</div>
-        </div>
-      </div>
-    </div>`;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   SESSION 3 — TRADING SESSION TIMER
+   SESSION TIMER
    ═══════════════════════════════════════════════════════════ */
 
 const TRADING_SESSIONS = [
@@ -1818,16 +1921,16 @@ function _buildSessionTimerHTML() {
     advice    = '🔥 London/NY overlap — highest volatility. Best time to trade.';
     adviceCol = '#00d4a1';
   } else if (londonActive) {
-    advice    = '✅ London session open — your primary trading window.';
+    advice    = '✅ London session open — your primary window.';
     adviceCol = '#3d9eff';
   } else if (nyActive) {
     advice    = '🟡 New York session open — moderate opportunity.';
     adviceCol = '#e4ae2a';
   } else if (activeSessions.length) {
-    advice    = '⚠️ Asian/Sydney session — low volatility. Avoid major pairs.';
+    advice    = '⚠️ Asian/Sydney session — low volatility.';
     adviceCol = '#e4ae2a';
   } else {
-    advice    = '😴 All sessions closed. Review analysis and prepare for London open.';
+    advice    = '😴 All sessions closed. Prepare for London open.';
     adviceCol = 'var(--t2)';
   }
 
@@ -1847,343 +1950,91 @@ function _buildSessionTimerHTML() {
     </div>`;
 }
 
-let _sessionTimerInterval = null;
-
-function _startSessionTimer() {
-  _renderSessionTimer();
-  clearInterval(_sessionTimerInterval);
-  _sessionTimerInterval = setInterval(_renderSessionTimer, 30000);
-}
-
 function _renderSessionTimer() {
   const el = document.getElementById('session-timer-card');
   if (!el) return;
   el.innerHTML = _buildSessionTimerHTML();
 }
 
-/* ═══════════════════════════════════════════════════════════
-   SESSION 3 — TRADE REVIEW MODE
-   ═══════════════════════════════════════════════════════════ */
-
-function _analyseTradeHistory() {
-  const trades = S.trades;
-  if (!trades || trades.length < 3) return null;
-
-  const wins   = trades.filter(t => t.outcome === 'win');
-  const losses = trades.filter(t => t.outcome === 'loss');
-  const be     = trades.filter(t => t.outcome === 'be');
-  const total  = trades.length;
-  const wr     = Math.round(wins.length / total * 100);
-
-  const avgRR = wins.length
-    ? (wins.reduce((a, t) => a + parseFloat(t.rr || 0), 0) / wins.length).toFixed(2)
-    : 0;
-
-  const netR = trades.reduce((a, t) => {
-    return a + (t.outcome === 'win' ? parseFloat(t.rr || 1) : t.outcome === 'loss' ? -1 : 0);
-  }, 0);
-
-  const pairMap = {};
-  trades.forEach(t => {
-    if (!t.pair) return;
-    if (!pairMap[t.pair]) pairMap[t.pair] = { wins: 0, losses: 0, total: 0 };
-    pairMap[t.pair].total++;
-    if (t.outcome === 'win')  pairMap[t.pair].wins++;
-    if (t.outcome === 'loss') pairMap[t.pair].losses++;
-  });
-
-  const pairList = Object.entries(pairMap).filter(([, d]) => d.total >= 2);
-  const bestPair = pairList.sort((a, b) => {
-    return (b[1].wins / b[1].total) - (a[1].wins / a[1].total);
-  })[0];
-  const worstPair = pairList.sort((a, b) => {
-    return (a[1].wins / a[1].total) - (b[1].wins / b[1].total);
-  })[0];
-
-  const sessionMap = {};
-  trades.forEach(t => {
-    if (!t.session) return;
-    if (!sessionMap[t.session]) sessionMap[t.session] = { wins: 0, total: 0 };
-    sessionMap[t.session].total++;
-    if (t.outcome === 'win') sessionMap[t.session].wins++;
-  });
-
-  const sessionList = Object.entries(sessionMap).filter(([, d]) => d.total >= 2);
-  const bestSession = sessionList.sort((a, b) => {
-    return (b[1].wins / b[1].total) - (a[1].wins / a[1].total);
-  })[0];
-
-  let streak = 0, streakType = '';
-  for (let i = 0; i < trades.length; i++) {
-    const o = trades[i].outcome;
-    if (i === 0) { streakType = o; streak = 1; continue; }
-    if (o === streakType) streak++;
-    else break;
-  }
-
-  const last5    = trades.slice(0, 5);
-  const last5WR  = Math.round(last5.filter(t => t.outcome === 'win').length / last5.length * 100);
-
-  const buyTrades  = trades.filter(t => t.direction === 'BUY');
-  const sellTrades = trades.filter(t => t.direction === 'SELL');
-  const buyWR      = buyTrades.length  ? Math.round(buyTrades.filter(t => t.outcome === 'win').length / buyTrades.length * 100)  : null;
-  const sellWR     = sellTrades.length ? Math.round(sellTrades.filter(t => t.outcome === 'win').length / sellTrades.length * 100) : null;
-
-  return {
-    total, wins: wins.length, losses: losses.length, be: be.length,
-    wr, avgRR, netR: netR.toFixed(1),
-    bestPair, worstPair, bestSession,
-    streak, streakType,
-    last5WR, last5Count: last5.length,
-    buyWR, sellWR,
-    buyCount: buyTrades.length, sellCount: sellTrades.length
-  };
-}
-
-function _generateCoachingNote(d) {
-  const notes = [];
-
-  if (d.wr >= 60) {
-    notes.push(`Your win rate of ${d.wr}% is strong. Focus on protecting this edge by not overtrading — quality over quantity.`);
-  } else if (d.wr >= 45) {
-    notes.push(`A ${d.wr}% win rate is workable if your R:R is consistent. Your average winner is ${d.avgRR}R — keep targeting setups where you can achieve at least 1:2.`);
-  } else {
-    notes.push(`Your win rate is currently ${d.wr}%. This suggests your entries need refinement. Review your last 5 losses and identify whether the issue is entry timing, zone selection, or news events.`);
-  }
-
-  if (parseFloat(d.netR) > 0) {
-    notes.push(`You're net positive at +${d.netR}R across ${d.total} trades — you are profitable. Protect this by sticking to your system.`);
-  } else {
-    notes.push(`Your net R is ${d.netR}R. Even with a good win rate, cutting losses short and letting winners run will improve this number significantly.`);
-  }
-
-  if (d.bestPair) {
-    const [pair, stats] = d.bestPair;
-    const pairWR = Math.round(stats.wins / stats.total * 100);
-    notes.push(`Your strongest pair is ${pair} with a ${pairWR}% win rate over ${stats.total} trades. Prioritise this pair when it aligns with your macro bias.`);
-  }
-
-  if (d.worstPair && d.worstPair[0] !== d.bestPair?.[0]) {
-    const [pair, stats] = d.worstPair;
-    const pairWR = Math.round(stats.wins / stats.total * 100);
-    notes.push(`Avoid ${pair} for now — your win rate there is only ${pairWR}% across ${stats.total} trades. This pair may not suit your current setup style.`);
-  }
-
-  if (d.bestSession) {
-    const [sess, stats] = d.bestSession;
-    const sessWR = Math.round(stats.wins / stats.total * 100);
-    notes.push(`The ${sess} session is where you perform best (${sessWR}% WR). Concentrate your trading energy during this window.`);
-  }
-
-  if (d.buyWR !== null && d.sellWR !== null && d.buyCount >= 2 && d.sellCount >= 2) {
-    if (Math.abs(d.buyWR - d.sellWR) >= 15) {
-      const betterDir = d.buyWR > d.sellWR ? 'BUY' : 'SELL';
-      const betterWR  = d.buyWR > d.sellWR ? d.buyWR : d.sellWR;
-      notes.push(`You trade ${betterDir} setups significantly better (${betterWR}% WR). Lean into this — only take the other direction when the macro setup is extremely clear.`);
-    }
-  }
-
-  if (d.last5Count >= 5) {
-    if (d.last5WR >= 60) {
-      notes.push(`Your last 5 trades show ${d.last5WR}% WR — you're in good form. Stay disciplined and avoid changing your process.`);
-    } else if (d.last5WR <= 30) {
-      notes.push(`Your recent form is concerning — only ${d.last5WR}% across your last 5 trades. Consider reducing position size or taking a short break to reset your mindset.`);
-    }
-  }
-
-  if (d.streak >= 3) {
-    if (d.streakType === 'win') {
-      notes.push(`You're on a ${d.streak}-trade winning streak. Stay humble — avoid oversizing just because you're running hot.`);
-    } else if (d.streakType === 'loss') {
-      notes.push(`You've had ${d.streak} consecutive losses. This is the most dangerous time to trade — step back, review your setups, and only return when conditions are clear.`);
-    }
-  }
-
-  return notes;
-}
-
-function renderTradeReview() {
-  const el = document.getElementById('trade-review-card');
-  if (!el) return;
-
-  const d = _analyseTradeHistory();
-
-  if (!d) {
-    el.innerHTML = '<div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">📋 Trade Review</div><p style="color:var(--t3);font-size:13px">Log at least 3 trades to unlock your coaching note.</p>';
-    return;
-  }
-
-  const notes    = _generateCoachingNote(d);
-  const netCol   = parseFloat(d.netR) >= 0 ? 'var(--green)' : 'var(--red)';
-  const wrCol    = d.wr >= 55 ? 'var(--green)' : d.wr >= 40 ? 'var(--gold)' : 'var(--red)';
-  const streakIcon = d.streakType === 'win' ? '🔥' : d.streakType === 'loss' ? '❄️' : '—';
-
-  el.innerHTML = `
-    <div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:14px">
-      📋 Weekly Trade Review
-    </div>
-
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px">
-      ${[
-        ['Win Rate',  d.wr + '%',         wrCol],
-        ['Net R',     (parseFloat(d.netR) >= 0 ? '+' : '') + d.netR + 'R', netCol],
-        ['Avg R:R',   '1:' + d.avgRR,     'var(--gold)'],
-        ['Streak',    streakIcon + ' ' + d.streak, d.streakType === 'win' ? 'var(--green)' : d.streakType === 'loss' ? 'var(--red)' : 'var(--t2)']
-      ].map(([lbl, val, col]) => `
-        <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:10px;padding:10px;text-align:center">
-          <div style="font-size:16px;font-weight:900;color:${col};margin-bottom:3px">${val}</div>
-          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.5px">${lbl}</div>
-        </div>`).join('')}
-    </div>
-
-    <div style="font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">
-      🧠 Coaching Note — based on your ${d.total} trades
-    </div>
-    <div style="display:flex;flex-direction:column;gap:10px">
-      ${notes.map((note, i) => `
-        <div style="display:flex;gap:12px;align-items:flex-start">
-          <div style="width:22px;height:22px;border-radius:50%;background:var(--gold-dim);border:1px solid rgba(228,174,42,.3);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:var(--gold);flex-shrink:0;margin-top:1px">${i + 1}</div>
-          <div style="font-size:13px;color:var(--t1);line-height:1.7">${note}</div>
-        </div>`).join('')}
-    </div>
-
-    ${d.bestPair || d.bestSession ? `
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--bd)">
-      ${d.bestPair ? `<span style="font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;background:var(--green-dim);color:var(--green);border:1px solid rgba(0,212,161,.25)">✅ Best pair: ${d.bestPair[0]}</span>` : ''}
-      ${d.worstPair ? `<span style="font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;background:var(--red-dim);color:var(--red);border:1px solid rgba(255,69,96,.25)">⚠️ Avoid: ${d.worstPair[0]}</span>` : ''}
-      ${d.bestSession ? `<span style="font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;background:var(--blue-dim);color:var(--blue);border:1px solid rgba(61,158,255,.25)">🕐 Best session: ${d.bestSession[0]}</span>` : ''}
-    </div>` : ''}`;
+function _startSessionTimer() {
+  _renderSessionTimer();
+  if (_sessionTimerInterval) clearInterval(_sessionTimerInterval);
+  _sessionTimerInterval = setInterval(_renderSessionTimer, 30000);
 }
 
 /* ═══════════════════════════════════════════════════════════
-   SESSION 4 — NEWS DECISION ENGINE
+   UTILITY HELPERS
    ═══════════════════════════════════════════════════════════ */
-
-const NEWS_PAIRS = {
-  USD: { quote: ['EUR/USD','GBP/USD','AUD/USD','NZD/USD'], base: ['USD/JPY','USD/CAD','USD/CHF'] },
-  EUR: { quote: ['EUR/GBP','EUR/JPY','EUR/CHF','EUR/CAD'], base: ['EUR/USD'] },
-  GBP: { quote: ['GBP/JPY','GBP/CHF','GBP/CAD'], base: ['GBP/USD','EUR/GBP'] },
-  JPY: { quote: [], base: ['USD/JPY','EUR/JPY','GBP/JPY','AUD/JPY','NZD/JPY'] },
-  AUD: { quote: ['AUD/JPY','AUD/CAD','AUD/NZD'], base: ['AUD/USD'] },
-  NZD: { quote: ['NZD/JPY','NZD/CAD'], base: ['NZD/USD','AUD/NZD'] },
-  CAD: { quote: [], base: ['USD/CAD','GBP/CAD','AUD/CAD','EUR/CAD'] },
-  CHF: { quote: [], base: ['USD/CHF','EUR/CHF','GBP/CHF'] }
-};
-
-const NEWS_EXPLANATIONS = {
-  cpi: {
-    better: 'Higher-than-expected inflation signals the central bank may hike rates or stay hawkish longer. This is bullish for the currency as higher rates attract capital inflows.',
-    worse:  'Lower-than-expected inflation reduces pressure on the central bank to hike rates, often triggering a dovish repricing. This weakens the currency as rate cut expectations rise.'
-  },
-  rate: {
-    better: 'A rate hike or more hawkish-than-expected decision increases yield differentials, making the currency more attractive to institutional investors. Strong bullish signal.',
-    worse:  'A rate cut or dovish surprise reduces the currency\'s yield advantage. Capital flows out toward higher-yielding alternatives, putting downward pressure on the currency.'
-  },
-  nfp: {
-    better: 'Strong employment data signals a healthy economy and supports central bank tightening. More jobs = more consumer spending = inflationary pressure = bullish for currency.',
-    worse:  'Weak employment undermines the central bank\'s case for rate hikes and raises recession fears. This is bearish for the currency, especially impactful on USD pairs.'
-  },
-  gdp: {
-    better: 'GDP beating expectations confirms economic strength and supports a hawkish central bank stance. Strong growth = bullish currency as rate hike probability increases.',
-    worse:  'GDP missing estimates signals economic contraction risk. Central banks are unlikely to hike in a slowing economy, weakening the currency against its peers.'
+function _toast(msg, type) {
+  let el = document.getElementById('_tes_toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = '_tes_toast';
+    Object.assign(el.style, {
+      position: 'fixed', top: '70px', left: '50%',
+      transform: 'translateX(-50%) translateY(-80px)',
+      zIndex: '9999', background: '#141e33',
+      border: '1px solid rgba(255,255,255,.12)',
+      borderRadius: '10px', padding: '11px 20px',
+      fontSize: '13px', fontWeight: '600',
+      transition: 'transform .3s ease', whiteSpace: 'nowrap',
+      pointerEvents: 'none', boxShadow: '0 6px 24px rgba(0,0,0,.5)',
+      color: '#eef2ff', fontFamily: 'inherit'
+    });
+    document.body.appendChild(el);
   }
-};
+  const colors = { success: '#00d4a1', error: '#ff4560', warning: '#e4ae2a' };
+  el.textContent   = msg;
+  el.style.color   = colors[type] || '#eef2ff';
+  el.style.borderColor = colors[type] ? colors[type] + '55' : 'rgba(255,255,255,.12)';
+  el.style.transform = 'translateX(-50%) translateY(0)';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.transform = 'translateX(-50%) translateY(-80px)'; }, 3400);
+}
 
-const NEWS_EVENT_NAMES = {
-  cpi:  'CPI (Inflation)',
-  rate: 'Interest Rate Decision',
-  nfp:  'Employment / NFP',
-  gdp:  'GDP (Growth)'
-};
+function _showErr(id, msg) {
+  const el = document.getElementById(id);
+  if (el) { el.textContent = msg; el.style.display = 'block'; }
+}
 
-function analyzeNewsImpact() {
-  const currency = document.getElementById('news-currency')?.value;
-  const event    = document.getElementById('news-event')?.value;
-  const outcome  = document.getElementById('news-outcome')?.value;
+function _clearErr(id) {
+  const el = document.getElementById(id);
+  if (el) { el.textContent = ''; el.style.display = 'none'; }
+}
 
-  if (!currency || !event || !outcome) {
-    _toast('Please select all three fields.', 'warning');
-    return;
-  }
+function _setText(id, val) {
+  const el = document.getElementById(id); if (el) el.textContent = val;
+}
 
-  const isBullish = outcome === 'better';
+function _escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
-  const pairs    = NEWS_PAIRS[currency] || { base: [], quote: [] };
-  const affected = [];
-
-  if (isBullish) {
-    pairs.base.forEach(p  => affected.push({ pair: p, direction: 'BUY',  reason: currency + ' is base — buy the pair' }));
-    pairs.quote.forEach(p => affected.push({ pair: p, direction: 'SELL', reason: currency + ' is quote — sell the pair' }));
-  } else {
-    pairs.base.forEach(p  => affected.push({ pair: p, direction: 'SELL', reason: currency + ' is base — sell the pair' }));
-    pairs.quote.forEach(p => affected.push({ pair: p, direction: 'BUY',  reason: currency + ' is quote — buy the pair' }));
-  }
-
-  const result = {
-    currency,
-    event,
-    outcome,
-    isBullish,
-    bias:        isBullish ? 'BULLISH' : 'BEARISH',
-    explanation: NEWS_EXPLANATIONS[event]?.[outcome] || '',
-    pairs:       affected.slice(0, 5)
+function _fbErr(code) {
+  const m = {
+    'auth/user-not-found':        'No account with this email.',
+    'auth/wrong-password':        'Incorrect password.',
+    'auth/invalid-credential':    'Incorrect email or password.',
+    'auth/email-already-in-use':  'Email already registered. Sign in instead.',
+    'auth/invalid-email':         'Enter a valid email address.',
+    'auth/weak-password':         'Password needs at least 6 characters.',
+    'auth/too-many-requests':     'Too many attempts. Wait a few minutes.',
+    'auth/network-request-failed':'Network error. Check your connection.'
   };
-
-  renderNewsImpact(result);
-
-  const el = document.getElementById('news-impact');
-  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  return m[code] || 'Something went wrong. Please try again.';
 }
 
-function renderNewsImpact(result) {
-  const el = document.getElementById('news-impact');
-  if (!el) return;
+/* ═══════════════════════════════════════════════════════════
+   DOM READY
+   ═══════════════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  // Risk calculator input listeners
+  ['rc-balance','rc-risk','rc-entry','rc-sl','rc-tp'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', calcRisk);
+  });
 
-  const biasCol  = result.isBullish ? '#00d4a1' : '#ff4560';
-  const biasBg   = result.isBullish ? 'rgba(0,212,161,.08)' : 'rgba(255,69,96,.08)';
-  const biasBdr  = result.isBullish ? 'rgba(0,212,161,.25)' : 'rgba(255,69,96,.25)';
-  const biasIcon = result.isBullish ? '↑' : '↓';
-
-  const pairRows = result.pairs.map(p => {
-    const col = p.direction === 'BUY' ? '#00d4a1' : '#ff4560';
-    const arr = p.direction === 'BUY' ? '↑' : '↓';
-    return `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)">
-        <div style="font-size:15px;font-weight:900;color:var(--t1);letter-spacing:-.3px">${p.pair}</div>
-        <span style="font-size:12px;font-weight:800;color:${col};background:${col}18;border:1px solid ${col}40;border-radius:8px;padding:4px 12px">
-          ${arr} ${p.direction}
-        </span>
-      </div>`;
-  }).join('');
-
-  el.innerHTML = `
-    <div style="background:${biasBg};border:1px solid ${biasBdr};border-radius:12px;padding:14px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
-      <div>
-        <div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px">
-          📢 News Impact — ${result.currency} ${NEWS_EVENT_NAMES[result.event]}
-        </div>
-        <div style="font-size:11px;color:var(--t2)">
-          ${result.outcome === 'better' ? 'Better than expected' : 'Worse than expected'}
-        </div>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;padding:8px 16px;border-radius:100px;background:${biasBg};border:1px solid ${biasBdr}">
-        <span style="font-size:20px;font-weight:900;color:${biasCol}">${biasIcon}</span>
-        <span style="font-size:14px;font-weight:900;color:${biasCol};letter-spacing:.5px">${result.bias}</span>
-      </div>
-    </div>
-
-    <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px">
-      <div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Why?</div>
-      <div style="font-size:13px;color:var(--t1);line-height:1.75">${result.explanation}</div>
-    </div>
-
-    <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:12px;padding:14px 16px">
-      <div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Affected Pairs</div>
-      <div style="font-size:11px;color:var(--t2);margin-bottom:8px">Based on ${result.currency} ${result.bias === 'BULLISH' ? 'strength' : 'weakness'}</div>
-      ${pairRows}
-      <div style="padding-top:12px;font-size:11px;color:var(--t3);line-height:1.6">
-        ⚠️ Wait for confirmation on your chart before entering. News analysis is directional guidance — always validate with structure and a valid entry model.
-      </div>
-    </div>`;
-}
-
+  // Initialize currency inputs
+  _initCurrencyInputs();
+  _initWBBInputs();
+});
