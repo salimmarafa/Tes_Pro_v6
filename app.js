@@ -25,6 +25,10 @@ const SUB_MS = {
   annual:  365 * 24 * 60 * 60 * 1000
 };
 
+function isOwner(email) {
+  return email === 'salimmarafa12@gmail.com';
+}
+
 // Tradeable pairs we suggest (base + quote)
 const TRADE_PAIRS = [
   ['GBP','JPY'],['EUR','JPY'],['AUD','JPY'],['USD','JPY'],
@@ -373,7 +377,21 @@ async function _verifyPayment(plan, ref) {
 
 async function bootUser(uid) {
   console.log('[TES] Booting user:', uid);
-
+  
+  // Owner bypass – full access without subscription
+  if (typeof isOwner === 'function' && S.user && isOwner(S.user.email)) {
+    console.log('[TES] Owner bypass active');
+    S.profile = {
+      uid: uid,
+      email: S.user.email,
+      paymentStatus: 'paid',
+      plan: 'owner',
+      expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000  // 1 year
+    };
+    _launchApp();
+    return;
+  }
+  
   S.profile = {
     uid:   uid,
     email: S.user?.email || 'unknown'
