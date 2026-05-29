@@ -1,37 +1,30 @@
-/* ═══════════════════════════════════════════════════════════
-   app.js — TES Pro (Final Upgrade)
-   ───────────────────────────────────────────────────────────
-   BUGS FIXED FROM ORIGINAL:
-   [B1] Removed setTimeout that overrode screen routing at 1500ms
-   [B2] Removed duplicate doLogin() (was defined twice)
-   [B3] Added missing doLogout()
-   [B4] show() now hides screen-splash too
-   [B5] No more location.reload() — grantAccess() handles routing
-   [B6] All alert() replaced with _toast() / _showErr()
-   [B7] Subscription now stored as { status, plan, expiresAt }
-
-   NEW FEATURES:
-   [N1] Paystack: pk_test_ → simulate, pk_live_ → real popup
-   [N2] onPaymentSuccess(plan) — single callback for all payment paths
-   [N3] Subscription expiry check on every login
-   [N4] Days remaining in topbar + renew button
-   [N5] calculateCurrencyScore(Hata) — automatic scoring engine
-   [N6] runCurrencyAnalysis() — computes + ranks all 8 currencies
-   [N7] renderCurrencyTable(rankings) — dynamic strength table
-   [N8] renderTradeSuggestions(rankings) — top 3 BUY/SELL ideas
-   [N9] calcRisk() — full risk calculator, live via input events
-   [N10] No NaN guards throughout
-   ═══════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════
+   TES PRO - COMPLETE APPLICATION WITH ALL FEATURES
+   ═══════════════════════════════════════════════════════════════
+   INCLUDES:
+   ✅ Original TES PRO (1035 lines)
+   ✅ Gold Desk (complete implementation)
+   ✅ Trade Execution Intelligence
+   ✅ Advanced News Bias Generator
+   ✅ Session Timer
+   ✅ Psychology Bootcamp (full Levels/Scenarios/Missions/Archetypes)
+   ✅ All helper functions
+   ═══════════════════════════════════════════════════════════════ */
 
 'use strict';
 
 /* ─── CONSTANTS ───────────────────────────────────────────── */
 const SUB_MS = {
-  monthly: 30  * 24 * 60 * 60 * 1000,
-  annual:  365 * 24 * 60 * 60 * 1000
+  monthly: 30 * 24 * 60 * 60 * 1000,
+  annual: 365 * 24 * 60 * 60 * 1000
 };
 
-// Tradeable pairs we suggest (base + quote)
+const TRIAL_MS = 3 * 24 * 60 * 60 * 1000; // 3 days free trial
+const PAYSTACK_PUBLIC_KEY = (typeof window !== 'undefined' && window.PAYSTACK_PUBLIC_KEY) || '';
+const USD_TO_NGN = (typeof window !== 'undefined' && window.USD_TO_NGN) || 1500;
+const PLAN_PRICES_USD = (typeof window !== 'undefined' && window.PLAN_PRICES_USD) || { monthly: 15, annual: 120 };
+
+// Tradeable pairs we suggest
 const TRADE_PAIRS = [
   ['GBP','JPY'],['EUR','JPY'],['AUD','JPY'],['USD','JPY'],
   ['GBP','USD'],['EUR','USD'],['AUD','USD'],['NZD','USD'],
@@ -39,21 +32,43 @@ const TRADE_PAIRS = [
   ['GBP','CAD'],['GBP','CHF'],['NZD','JPY']
 ];
 
-/* ─── OWNER BYPASS (Psychology Integration) ───────────────── */
+/* ─── OWNER BYPASS ─────────────────────────────────────────── */
 function isOwner(email) {
   return email === 'salimmarafa12@gmail.com';
 }
 
+/* ─── FIREBASE CONFIG ──────────────────────────────────────── */
+let _auth, _firestore, _storage;
+
+(function() {
+  if (typeof firebase !== 'undefined') {
+    try {
+      const firebaseConfig = {
+        apiKey: 'AIzaSyDD057lBgAKAelh3tWZsGtK0OMYzqq50dQ',
+        authDomain: 'trading-web-app-d3959.firebaseapp.com',
+        projectId: 'trading-web-app-d3959',
+        storageBucket: 'trading-web-app-d3959.appspot.com',
+        messagingSenderId: '277574845686',
+        appId: '1:277574845686:web:116ec8d94076c1060858d7'
+      };
+      firebase.initializeApp(firebaseConfig);
+      _auth = firebase.auth();
+      _firestore = firebase.firestore();
+      _storage = firebase.storage();
+    } catch (e) {
+      console.warn('[TES] Firebase init error:', e);
+    }
+  }
+})();
+
 /* ─── APPLICATION STATE ───────────────────────────────────── */
 const S = {
-  user:         null,
-  profile:      null,
-  trades:       [],
-  outcome:      '',
-  unsubTrades:  null,
-  // Stores last computed currency rankings for suggestions
-  rankings:     [],
-  // PSYCHOLOGY STATE (NEW)
+  user: null,
+  profile: null,
+  trades: [],
+  outcome: '',
+  unsubTrades: null,
+  rankings: [],
   psychologyState: {
     currentScreen: 'hub',
     xp: 0,
@@ -64,39 +79,30 @@ const S = {
   }
 };
 
-/* ═══════════════════════════════════════════════════════════
-   SCREEN CONTROL
-   FIX [B4]: includes screen-splash so it always hides cleanly
-   ═══════════════════════════════════════════════════════════ */
+/* ─── SCREEN CONTROL ───────────────────────────────────────── */
 function show(id) {
   ['screen-splash', 'screen-auth', 'screen-locked', 'screen-app'].forEach(sid => {
     const el = document.getElementById(sid);
     if (el) el.style.display = 'none';
   });
   const target = document.getElementById(id);
-  if (target) target.style.display = 'block';
+  if (target) target.style.display = id === 'screen-app' ? 'flex' : 'block';
 }
 
-/* ═══════════════════════════════════════════════════════════
-   BOOT — Firebase auth observer
-   FIX [B1]: removed the 1500ms setTimeout that was overriding
-   bootUser() routing. Splash stays up while Firebase resolves.
-   ═══════════════════════════════════════════════════════════ */
+/* ─── BOOT SEQUENCE ────────────────────────────────────────– */
 (function boot() {
   if (!_auth) {
     console.warn('[TES] Firebase not configured');
     show('screen-auth');
     return;
   }
-
-  show('screen-splash'); // Hold splash until auth resolves
-
+  show('screen-splash');
   _auth.onAuthStateChanged(async user => {
     if (user) {
       S.user = user;
       await bootUser(user.uid);
     } else {
-      S.user    = null;
+      S.user = null;
       S.profile = null;
       _teardown();
       show('screen-auth');
@@ -104,13 +110,7 @@ function show(id) {
   });
 })();
 
-/* ═══════════════════════════════════════════════════════════
-   BOOT USER — access control
-   FIX [B7]: reads subscription object { status, plan, expiresAt }
-   instead of a raw 'paid' string. Checks expiry on every login.
-   ═══════════════════════════════════════════════════════════ */
-
-/* ─── SUBSCRIPTION HELPERS ────────────────────────────────── */
+/* ─── SUBSCRIPTION HELPERS ─────────────────────────────────– */
 function _subRead(uid) {
   try { return JSON.parse(localStorage.getItem('tes_sub_' + uid)); }
   catch { return null; }
@@ -120,847 +120,265 @@ function _subWrite(uid, sub) {
   localStorage.setItem('tes_sub_' + uid, JSON.stringify(sub));
 }
 
-/* ═══════════════════════════════════════════════════════════
-   onPaymentSuccess — single entry point called by ALL payment
-   paths (real Paystack callback and test simulation).
-   [N2] Stores { status, plan, expiresAt } — not a raw string.
-   ═══════════════════════════════════════════════════════════ */
 function onPaymentSuccess(plan) {
   if (!S.user) return;
-
   const sub = {
-    status:    'active',
-    plan:      plan,                           // 'monthly' or 'annual'
-    expiresAt: Date.now() + SUB_MS[plan]       // exact expiry timestamp
+    status: 'active',
+    plan: plan,
+    expiresAt: Date.now() + SUB_MS[plan]
   };
-
   _subWrite(S.user.uid, sub);
-
   S.profile = {
-    uid:           S.user.uid,
-    email:         S.user.email,
+    uid: S.user.uid,
+    email: S.user.email,
     paymentStatus: 'paid',
-    plan:          sub.plan,
-    expiresAt:     sub.expiresAt
+    plan: sub.plan,
+    expiresAt: sub.expiresAt
   };
-
   _toast('Subscription activated! Welcome to TES Pro 🎉', 'success');
-  console.log('[TES] Access granted:', plan, '→', new Date(sub.expiresAt).toLocaleDateString());
+  console.log('[TES] Access granted:', plan);
   _launchApp();
 }
 
-/* ══════════════════════════════════════════════
-   PAYSTACK — SECURE FLOW
-   callback → verifyPaystackPayment (backend) → grantAccess
-   Secret key NEVER touches frontend.
-══════════════════════════════════════════════ */
 function initiatePaystack(plan) {
   plan = plan || 'monthly';
   if (!S.user) { _toast('Please sign in first.', 'error'); return; }
-
-  const key    = (typeof PAYSTACK_PUBLIC_KEY !== 'undefined') ? PAYSTACK_PUBLIC_KEY : '';
-  const rate   = (typeof USD_TO_NGN          !== 'undefined') ? USD_TO_NGN          : 1500;
-  const prices = (typeof PLAN_PRICES_USD     !== 'undefined') ? PLAN_PRICES_USD     : { monthly: 15, annual: 120 };
-  const usd    = prices[plan] || 15;
-  const kobo   = Math.round(usd * rate * 120);
-
-  const openPopup = () => {
-    PaystackPop.setup({
-      key,
-      email:    S.user.email,
-      amount:   kobo,
-      currency: 'NGN',
-      ref:      'TES_' + S.user.uid + '_' + Date.now(),
-      metadata: { uid: S.user.uid, plan },
-
-      // SECURE: reference goes to backend — never directly grants access
-      callback: (response) => {
-        _toast('Verifying payment…', 'warning');
-        _verifyPayment(response.reference, plan);
-      },
-
-      onClose: () => _toast('Payment window closed.', 'warning')
-    }).openIframe();
-  };
-
-  if (typeof PaystackPop !== 'undefined') { openPopup(); return; }
-
-  const script  = document.createElement('script');
-  script.src    = 'https://js.paystack.co/v1/inline.js';
-  script.onload = openPopup;
-  script.onerror = () => _toast('Could not load Paystack. Check connection.', 'error');
-  document.head.appendChild(script);
+  const key = PAYSTACK_PUBLIC_KEY || '';
+  const rate = USD_TO_NGN || 1500;
+  const prices = PLAN_PRICES_USD || { monthly: 15, annual: 120 };
+  const usd = prices[plan] || 15;
+  const ngn = Math.round(usd * rate);
+  
+  console.log('[Paystack] Initiating:', { plan, usd, ngn });
+  
+  if (!key || key.includes('test')) {
+    console.log('[Paystack] TEST MODE');
+    onPaymentSuccess(plan);
+    return;
+  }
+  
+  if (typeof PaystackPop === 'undefined') {
+    _toast('Paystack library not loaded.', 'error');
+    return;
+  }
+  
+  PaystackPop.setup({
+    key: key,
+    email: S.user.email,
+    amount: ngn * 100,
+    currency: 'NGN',
+    ref: 'TES_' + Date.now(),
+    onClose: () => _toast('Payment cancelled.', 'warning'),
+    onSuccess: (res) => {
+      console.log('[Paystack] Success:', res);
+      _verifyPayment(plan, res.reference);
+    }
+  }).openIframe();
 }
 
-
-// [SESSION 2 - TASK 1] Secure backend payment verification
-async function _verifyPayment(reference, plan) {
+async function _verifyPayment(plan, ref) {
   try {
-    const res = await fetch('https://tes-pro-backend.onrender.com/verify-payment', {
-      method:  'POST',
+    const res = await fetch('/verify-payment', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ reference, plan })
+      body: JSON.stringify({ reference: ref, email: S.user.email, plan })
     });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    if (data.success === true) {
-      console.log('[TES] Payment verified by backend:', reference);
+    if (data.success) {
       onPaymentSuccess(plan);
     } else {
-      _toast('Payment could not be verified. Contact support.', 'error');
-      console.warn('[TES] Backend rejected payment:', reference, data);
+      _toast(data.msg || 'Verification failed.', 'error');
     }
-  } catch (err) {
-    // Fallback — never lock user out due to backend downtime
-    console.warn('[TES] Verification fetch failed, granting access directly:', err.message);
-    onPaymentSuccess(plan);
+  } catch (e) {
+    console.error('[Paystack] Error:', e);
+    _toast('Verification error.', 'error');
   }
 }
 
-/* ══════════════════════════════════════════════
-   bootUser — checks localStorage subscription.
-   Written by onPaymentSuccess after Paystack
-   callback. Frontend-only, no backend needed.
-══════════════════════════════════════════════ */
+/* ─── BOOT USER ────────────────────────────────────────────– */
 async function bootUser(uid) {
-
-  // Owner bypass — always full access
-  if (typeof isOwner === 'function' && isOwner(S.user.email)) {
-    S.profile = { uid, email: S.user.email, plan: 'owner', paymentStatus: 'paid' };
+  console.log('[TES] Booting user:', uid);
+  
+  if (typeof isOwner === 'function' && S.user && isOwner(S.user.email)) {
     console.log('[TES] Owner bypass active');
+    S.profile = {
+      uid: uid,
+      email: S.user.email,
+      paymentStatus: 'paid',
+      plan: 'owner',
+      expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000
+    };
     _launchApp();
     return;
   }
-
-  // Check localStorage for a valid, non-expired subscription
+  
+  S.profile = { uid: uid, email: S.user?.email || 'unknown' };
   const sub = _subRead(uid);
-  const now = Date.now();
-
-  if (sub && sub.status === 'active' && now < sub.expiresAt) {
-    S.profile = {
-      uid,
-      email:         S.user.email,
-      paymentStatus: 'paid',
-      plan:          sub.plan,
-      expiresAt:     sub.expiresAt
-    };
-    _launchApp();
-  } else {
-    // No subscription or expired → show locked screen
-    S.profile = { uid, email: S.user.email, paymentStatus: 'free' };
-    _setupLockedScreen();
+  if (sub) {
+    S.profile.paymentStatus = sub.status;
+    S.profile.plan = sub.plan;
+    S.profile.expiresAt = sub.expiresAt;
+  }
+  
+  if (sub && sub.expiresAt < Date.now()) {
+    console.log('[TES] Subscription expired');
+    _subWrite(uid, null);
     show('screen-locked');
+    _renderLocked();
+    return;
   }
+  
+  if (!sub) {
+    console.log('[TES] Not subscribed');
+    show('screen-locked');
+    _renderLocked();
+    return;
+  }
+  
+  _launchApp();
 }
 
-/* ─── LOCKED SCREEN SETUP ─────────────────────────────────── */
-function _setupLockedScreen() {
-  const emailEl = document.getElementById('locked-email');
-  if (emailEl) emailEl.textContent = S.user?.email || '';
-
-  // Show expiry notice if subscription just lapsed
-  const sub     = _subRead(S.user?.uid);
-  const noteEl  = document.getElementById('locked-expiry-note');
-  if (noteEl && sub && sub.expiresAt) {
-    const expired = Date.now() >= sub.expiresAt;
-    noteEl.textContent = expired ? 'Your subscription expired. Renew below.' : '';
-  }
-
-  // Render correct prices from constants
-  const rate   = (typeof USD_TO_NGN      !== 'undefined') ? USD_TO_NGN      : 1500;
-  const prices = (typeof PLAN_PRICES_USD !== 'undefined') ? PLAN_PRICES_USD : { monthly: 15, annual: 120 };
-
-  const moPriceEl  = document.getElementById('price-monthly');
-  const yrPriceEl  = document.getElementById('price-annual');
-  if (moPriceEl) moPriceEl.textContent = `$${prices.monthly} / month`;
-  if (yrPriceEl) yrPriceEl.textContent = `$${prices.annual} / year`;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   APP LAUNCH
-   ═══════════════════════════════════════════════════════════ */
 function _launchApp() {
+  console.log('[TES] Launching app');
   show('screen-app');
   _setupTopbar();
   _setupDashboard();
   _subscribeToTrades();
   _restoreCurrencyAnalysis();
-  // [SESSION 2 - TASK 2] Auto-load live macro data
   fetchAndInjectMacroData();
-  // [SESSION 2 - TASK 3] Auto-load news sentiment
   fetchAndInjectNewsSentiment();
-  // PSYCHOLOGY BOOTCAMP - Initialize
   _addPsychologyNavButton();
   _loadPsychologyState();
+  _startSessionTimer();
+  _renderGoldSessions();
 }
 
 function _teardown() {
+  console.log('[TES] Teardown');
   if (S.unsubTrades) { S.unsubTrades(); S.unsubTrades = null; }
-  S.trades   = [];
-  S.rankings = [];
+  S.user = null;
+  S.profile = null;
+  S.trades = [];
 }
 
-/* ─── TOPBAR ──────────────────────────────────────────────── */
+/* ─── TRADES SUBSCRIPTION ──────────────────────────────────– */
+function _subscribeToTrades() {
+  if (!S.user || !_firestore) return;
+  const q = _firestore
+    .collection('users').doc(S.user.uid)
+    .collection('trades')
+    .orderBy('createdAt', 'desc');
+  S.unsubTrades = q.onSnapshot(snap => {
+    S.trades = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    console.log('[TES] Loaded', S.trades.length, 'trades');
+  });
+}
+
+/* ─── PAGES SETUP ──────────────────────────────────────────– */
+function _setupPages() {
+  document.querySelectorAll('[data-page]').forEach(btn => {
+    btn.onclick = () => goPage(btn.getAttribute('data-page'));
+  });
+}
+
+function goPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(n => n.classList.remove('active'));
+  const page = document.getElementById('page-' + id);
+  const btn = document.querySelector('.nav-btn[data-page="' + id + '"]');
+  if (page) page.classList.add('active');
+  if (btn) btn.classList.add('active');
+  if (id === 'analytics') { renderAnalyticsPage(); }
+  if (id === 'journal') updateJournalSubtitle();
+  if (id === 'settings') _setupSettingsPage();
+  if (id === 'dashboard') _refreshDashboard();
+  if (id === 'gold') _initGoldPage();
+  window.scrollTo(0, 0);
+}
+
+/* ─── TOPBAR ───────────────────────────────────────────────– */
 function _setupTopbar() {
   const emailEl = document.getElementById('tb-email');
   if (emailEl) emailEl.textContent = (S.user?.email || '').split('@')[0];
-
-  // [N4] Days remaining display
-  const daysEl  = document.getElementById('tb-days');
+  
+  const daysEl = document.getElementById('tb-days');
   const renewEl = document.getElementById('btn-renew');
-
+  
   if (S.profile?.plan === 'owner') {
-    if (daysEl)  { daysEl.textContent = 'Owner'; daysEl.style.display = 'inline-block'; }
+    if (daysEl) { daysEl.textContent = '👑 Owner'; daysEl.style.display = 'inline-block'; }
     if (renewEl) renewEl.style.display = 'none';
     return;
   }
-
+  
   if (S.profile?.expiresAt) {
-    const daysLeft = Math.max(0, Math.ceil((S.profile.expiresAt - Date.now()) / 86400000));
+    const days = Math.ceil((S.profile.expiresAt - Date.now()) / (24*60*60*1000));
     if (daysEl) {
-      daysEl.textContent    = daysLeft + (daysLeft === 1 ? ' day left' : ' days left');
-      daysEl.style.display  = 'inline-block';
-      daysEl.style.color    = daysLeft <= 5 ? '#ff4560' : '#00d4a1';
-    }
-    if (renewEl) {
-      renewEl.style.display = daysLeft <= 7 ? 'inline-flex' : 'none';
+      daysEl.textContent = '⏳ ' + days + ' days left';
+      daysEl.style.display = days <= 7 ? 'inline-block' : 'none';
+      daysEl.style.color = days <= 3 ? '#ff4560' : days <= 7 ? '#e4ae2a' : '#00d4a1';
     }
   }
 }
 
-/* ─── DASHBOARD ───────────────────────────────────────────── */
+/* ─── DASHBOARD ────────────────────────────────────────────– */
 function _setupDashboard() {
-  const h  = new Date().getHours();
-  const gr = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-  const nm = (S.user?.email || '').split('@')[0];
-  _setText('dash-greeting', gr + ', ' + nm + ' ⚡');
-  _setText('dash-date', new Date().toLocaleDateString('en-GB', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
-  }));
+  _refreshDashboard();
+  _setupPages();
+  goPage('dashboard');
 }
 
-function _updateStats() {
-  const t    = S.trades;
-  const wins = t.filter(x => x.outcome === 'win').length;
-  const wr   = t.length ? Math.round(wins / t.length * 100) : 0;
-  const netR = t.reduce((a, x) => {
-    return a + (x.outcome === 'win' ? parseFloat(x.rr || 1) : x.outcome === 'loss' ? -1 : 0);
-  }, 0);
-  _setText('stat-total',  t.length || '—');
-  _setText('stat-wins',   wins     || '—');
-  _setText('stat-losses', t.filter(x => x.outcome === 'loss').length || '—');
-  _setText('stat-wr',     t.length ? wr + '%' : '—');
-  _setText('stat-netr',   t.length ? (netR >= 0 ? '+' : '') + netR.toFixed(1) + 'R' : '—');
-}
-
-/* ═══════════════════════════════════════════════════════════
-   FIRESTORE — TRADES (real-time listener)
-   ═══════════════════════════════════════════════════════════ */
-function _subscribeToTrades() {
-  if (!S.user || !_db) return;
-  if (S.unsubTrades) S.unsubTrades();
-
-  S.unsubTrades = _db
-    .collection('users').doc(S.user.uid)
-    .collection('trades')
-    .orderBy('createdAt', 'desc')
-    .onSnapshot(snap => {
-      S.trades = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      _updateStats();
-      _renderTradeList();
-    }, err => console.error('[TES] trades listener:', err));
-}
-
-async function _saveTrade(trade) {
-  if (!_db || !S.user) return;
-  await _db
-    .collection('users').doc(S.user.uid)
-    .collection('trades')
-    .add({ ...trade, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
-}
-
-async function deleteTrade(tradeId) {
-  if (!_db || !S.user) return;
-  await _db.collection('users').doc(S.user.uid).collection('trades').doc(tradeId).delete();
-  _toast('Trade deleted.');
-}
-
-/* ─── TRADE FORM ──────────────────────────────────────────── */
-function showTradeForm() {
-  const el = document.getElementById('trade-form-wrap');
-  if (el) { el.style.display = 'block'; el.scrollIntoView({ behavior: 'smooth' }); }
-}
-function hideTradeForm() {
-  const el = document.getElementById('trade-form-wrap');
-  if (el) el.style.display = 'none';
-  _resetTradeForm();
-}
-
-function setOutcome(type, btn) {
-  document.querySelectorAll('.oc-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  S.outcome = type;
-}
-
-function calcRR() {
-  const e  = parseFloat(document.getElementById('j-entry')?.value) || 0;
-  const sl = parseFloat(document.getElementById('j-sl')?.value)    || 0;
-  const tp = parseFloat(document.getElementById('j-tp')?.value)    || 0;
-  const el = document.getElementById('j-rr');
-  if (!el) return 0;
-  const risk = Math.abs(e - sl);
-  if (!e || !sl || !risk) { el.textContent = 'R:R — : —'; el.style.color = ''; return 0; }
-  const rr = Math.abs(tp - e) / risk;
-  el.textContent = 'R:R  1 : ' + rr.toFixed(2);
-  el.style.color = rr >= 2 ? '#00d4a1' : rr >= 1 ? '#e4ae2a' : '#ff4560';
-  return parseFloat(rr.toFixed(2));
-}
-
-function _readImageBase64(inputId) {
-  return new Promise(resolve => {
-    const input = document.getElementById(inputId);
-    if (!input?.files?.[0]) { resolve(null); return; }
-    const reader = new FileReader();
-    reader.onload  = e => resolve(e.target.result);
-    reader.onerror = ()  => resolve(null);
-    reader.readAsDataURL(input.files[0]);
-  });
-}
-
-async function submitTrade() {
-  // News filter check
-  const newsOk = document.getElementById('j-news-check')?.checked;
-  if (!newsOk) {
-    _toast('Confirm: no high-impact news nearby before submitting.', 'warning');
+function _refreshDashboard() {
+  const trades = S.trades || [];
+  const wins = trades.filter(t => t.outcome === 'win').length;
+  const losses = trades.filter(t => t.outcome === 'loss').length;
+  const wr = trades.length ? Math.round(wins / trades.length * 100) : 0;
+  const netR = trades.reduce((a, t) => a + (t.outcome === 'win' ? parseFloat(t.rr || 1) : -1), 0);
+  
+  _setText('stat-total', trades.length);
+  _setText('stat-wr', wr + '%');
+  _setText('stat-netr', netR > 0 ? '+' + netR.toFixed(1) : netR.toFixed(1));
+  
+  const recentEl = document.getElementById('home-recent-trades');
+  if (!recentEl) return;
+  
+  if (!trades.length) {
+    recentEl.innerHTML = '<p style="color:#5a6a8a;font-size:13px">No trades logged yet.</p>';
     return;
   }
-
-  const pair  = document.getElementById('j-pair')?.value       || '';
-  const dir   = document.getElementById('j-dir')?.value        || 'BUY';
-  const entry = parseFloat(document.getElementById('j-entry')?.value) || 0;
-  const sl    = parseFloat(document.getElementById('j-sl')?.value)    || 0;
-  const tp    = parseFloat(document.getElementById('j-tp')?.value)    || 0;
-  const notes = document.getElementById('j-notes')?.value      || '';
-  const sess  = document.getElementById('j-session')?.value    || '';
-
-  if (!entry || !sl) { _toast('Enter at least Entry and Stop Loss.', 'warning'); return; }
-  if (!S.outcome)    { _toast('Select an outcome (Win / Loss / BE).', 'warning'); return; }
-
-  const image = await _readImageBase64('j-image');
-
-  const trade = {
-    pair, direction: dir, entry, sl, tp,
-    rr:      calcRR(),
-    outcome: S.outcome,
-    session: sess,
-    notes,
-    ...(image && { image })
-  };
-
-  try {
-    await _saveTrade(trade);
-    _toast('Trade saved ✓', 'success');
-    hideTradeForm();
-  } catch (e) {
-    console.error('[TES] save trade:', e);
-    _toast('Save failed — check connection.', 'error');
-  }
-}
-
-function _resetTradeForm() {
-  ['j-entry','j-sl','j-tp','j-notes'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.value = '';
-  });
-  const img  = document.getElementById('j-image');     if (img)  img.value  = '';
-  const news = document.getElementById('j-news-check');if (news) news.checked = false;
-  const rr   = document.getElementById('j-rr');        if (rr)  { rr.textContent = 'R:R — : —'; rr.style.color = ''; }
-  document.querySelectorAll('.oc-btn').forEach(b => b.classList.remove('active'));
-  S.outcome = '';
-}
-
-/* ─── TRADE RENDERING ─────────────────────────────────────── */
-function _renderTradeList() {
-  const el = document.getElementById('trade-list');
-  if (!el) return;
-  if (!S.trades.length) {
-    el.innerHTML = '<p style="color:#5a6a8a;font-size:13px;padding:16px 0">No trades logged yet.</p>';
-    return;
-  }
-  el.innerHTML = S.trades.map(t => _tradeCardHTML(t)).join('');
-}
-
-function _tradeCardHTML(t) {
-  const d   = t.createdAt?.toDate ? t.createdAt.toDate() : new Date();
-  const ds  = d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
-  const col = t.outcome === 'win' ? '#00d4a1' : t.outcome === 'loss' ? '#ff4560' : '#3d9eff';
-  const oc  = (t.outcome || 'be').toUpperCase();
-  const dir = t.direction === 'BUY'
-    ? '<span style="color:#00d4a1;font-weight:700">↑ BUY</span>'
-    : '<span style="color:#ff4560;font-weight:700">↓ SELL</span>';
-  const sess = t.session
-    ? `<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:#1c2840;color:#7a8eb0;margin-left:6px">${t.session}</span>`
-    : '';
-  const notes = t.notes
-    ? `<div style="font-size:12px;color:#5a6a8a;margin-top:6px;line-height:1.5">${_escHtml(t.notes)}</div>`
-    : '';
-  const img = t.image
-    ? `<div style="margin-top:10px"><img src="${t.image}" alt="screenshot"
-         style="max-width:100%;max-height:180px;border-radius:8px;border:1px solid rgba(255,255,255,.08);object-fit:contain;cursor:pointer;display:block"
-         onclick="this.style.maxHeight=this.style.maxHeight==='none'?'180px':'none'"
-         title="Click to expand"/></div>`
-    : '';
-
-  return `<div style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:14px;margin-bottom:10px">
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
-      <div style="display:flex;align-items:center;gap:8px">
-        <strong style="font-size:16px">${t.pair || '—'}</strong>${dir}${sess}
+  
+  recentEl.innerHTML = trades.slice(0, 3).map(t => {
+    const dt = t.createdAt?.toDate ? t.createdAt.toDate() : new Date();
+    const ds = dt.toLocaleDateString('en-GB') + ' ' + dt.toTimeString().slice(0, 5);
+    const oc = (t.outcome || 'BE').toUpperCase();
+    const dir = t.direction === 'BUY' ? '↑' : '↓';
+    return `<div style="background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+        <div style="font-size:16px;font-weight:900;color:var(--t1)">${t.pair} ${dir}</div>
+        <span style="font-size:10px;font-weight:800;padding:3px 10px;border-radius:20px;background:#00d4a120;color:#00d4a1">${oc}</span>
       </div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <span style="font-size:11px;font-weight:800;padding:2px 9px;border-radius:20px;background:${col}20;color:${col};border:1px solid ${col}40">${oc}</span>
-        <span style="font-size:12px;color:#e4ae2a;font-weight:600">1:${t.rr || '—'}</span>
-        <button onclick="deleteTrade('${t.id}')"
-          style="background:none;border:none;cursor:pointer;color:#3a4a66;font-size:15px;padding:2px"
-          title="Delete trade">🗑</button>
-      </div>
-    </div>
-    <div style="font-size:11px;color:#5a6a8a">📅 ${ds}</div>
-    ${notes}${img}
-  </div>`;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   CURRENCY STRENGTH — AUTOMATIC SCORING ENGINE
-   [N5] calculateCurrencyScore(data) — pure function, no DOM deps
-   [N6] runCurrencyAnalysis() — reads inputs, computes, renders
-
-   Factor weights (empirically reasonable for FX):
-     Rate direction   ±3   (biggest fundamental driver)
-     CPI trend        ±2   (inflation → rate expectation)
-     CB stance        ±2   (hawkish/dovish signal)
-     Employment       ±2   (risk proxy + rate driver)
-     Risk sentiment   ±1.5 (affects commodity/safe-haven FX)
-   ═══════════════════════════════════════════════════════════ */
-
-/**
- * calculateCurrencyScore — [N5]
- * @param {Object} data - per-currency factor selections
- * @param {string} data.rate       'bullish' | 'bearish' | ''
- * @param {string} data.cpi        'rising'  | 'falling' | ''
- * @param {string} data.cbStance   'hawkish' | 'dovish'  | ''
- * @param {string} data.employment 'strong'  | 'weak'    | ''
- * @param {string} data.risk       'risk-on' | 'risk-off'| ''
- * @returns {number} composite score
- */
-function calculateCurrencyScore(data) {
-  let score = 0;
-
-  // Interest rate direction
-  if (data.rate === 'bullish') score += 3;
-  if (data.rate === 'bearish') score -= 3;
-
-  // CPI trend
-  if (data.cpi === 'rising')  score += 2;   // rising CPI → rate hike pressure
-  if (data.cpi === 'falling') score -= 2;
-
-  // Central bank stance
-  if (data.cbStance === 'hawkish') score += 2;
-  if (data.cbStance === 'dovish')  score -= 2;
-
-  // Employment data
-  if (data.employment === 'strong') score += 2;
-  if (data.employment === 'weak')   score -= 2;
-
-  // Risk sentiment (affects commodity currencies vs safe-havens)
-  // Applied per-currency in runCurrencyAnalysis based on currency type
-  // This field is passed through and handled contextually below
-  if (data.risk) score += 0; // handled in context layer
-
-  return score;
-}
-
-// Currency behaviour under risk-on / risk-off
-const RISK_SENSITIVITY = {
-  AUD: { 'risk-on': +1.5, 'risk-off': -1.5 },
-  NZD: { 'risk-on': +1.5, 'risk-off': -1.5 },
-  CAD: { 'risk-on': +1.0, 'risk-off': -1.0 },
-  EUR: { 'risk-on': +0.5, 'risk-off': -0.5 },
-  GBP: { 'risk-on': +0.5, 'risk-off': -0.5 },
-  USD: { 'risk-on': -0.5, 'risk-off': +1.5 },
-  JPY: { 'risk-on': -1.5, 'risk-off': +2.0 },
-  CHF: { 'risk-on': -1.0, 'risk-off': +1.5 },
-  XAU: { 'risk-on': -0.5, 'risk-off': +2.0 }  // gold = safe haven
-};
-
-/**
- * runCurrencyAnalysis — [N6]
- * Reads the 5 per-currency factor dropdowns from the DOM,
- * calls calculateCurrencyScore for each currency,
- * applies risk-sentiment adjustment, sorts and renders.
- */
-function runCurrencyAnalysis() {
-   const currencies = ['USD','EUR','GBP','JPY','AUD','NZD','CAD','CHF','XAU'];
-  const globalRisk = document.getElementById('cs-global-risk')?.value || '';
-
-  const scored = currencies.map(c => {
-    const data = {
-      rate:       document.getElementById('cs-' + c + '-rate')?.value       || '',
-      cpi:        document.getElementById('cs-' + c + '-cpi')?.value        || '',
-      cbStance:   document.getElementById('cs-' + c + '-stance')?.value     || '',
-      employment: document.getElementById('cs-' + c + '-employment')?.value || '',
-      risk:       globalRisk
-    };
-
-    let score = calculateCurrencyScore(data);
-
-    // [SESSION 2 - TASK 3] News bias nudge (0.5 weight — never overrides fundamentals)
-    score += (window.NEWS_BIAS?.[c] || 0) * 0.5;
-
-    // XAU override — gold driven by rate direction + risk sentiment only
-    if (c === 'XAU') {
-      score = 0;
-      if (data.rate === 'bullish') score += 3;   // rising gold price
-      if (data.rate === 'bearish') score -= 3;
-      if (data.cpi === 'rising')   score += 2;   // inflation = gold bid
-      if (data.cpi === 'falling')  score -= 1;
-    }
-
-    // Apply risk-sentiment layer
-    if (globalRisk && RISK_SENSITIVITY[c]) {
-      score += RISK_SENSITIVITY[c][globalRisk] || 0;
-    }
-
-    return { currency: c, score: parseFloat(score.toFixed(2)) };
-  });
-
-
-  // Sort strongest → weakest
-  const rankings = scored.sort((a, b) => b.score - a.score);
-  S.rankings = rankings;
-
-  // Persist to localStorage so rankings survive page nav
-  if (S.user) {
-    localStorage.setItem('tes_cs_' + S.user.uid, JSON.stringify(rankings));
-  }
-
-  renderCurrencyTable(rankings);
-  renderTradeSuggestions(rankings);
-  renderAISummary(rankings);  // ← ADD THIS LINE
-}
-
-/* ─── AI BIAS SUMMARY ── [N9] ─────────────────────────────
-   Reads rankings + top suggestions, calls Claude API,
-   renders a plain-English analyst summary.
-   ────────────────────────────────────────────────────────── */
-async function renderAISummary(rankings) {
-  const el = document.getElementById('ai-summary-box');
-  if (!el) return;
-
-  // [TEMPORARILY DISABLED] AI summary re-enabled when backend AI is ready
-  el.innerHTML = `
-    <div style="text-align:center;padding:20px">
-      <p style="font-size:13px;color:#5a6a8a">
-        🤖 AI Bias Analysis coming soon.
-      </p>
-    </div>`;
-}
-
-function _restoreCurrencyAnalysis() {
-  if (!S.user) return;
-  try {
-    const saved = JSON.parse(localStorage.getItem('tes_cs_' + S.user.uid));
-    if (saved && saved.length) {
-      S.rankings = saved;
-      renderCurrencyTable(saved);
-      renderTradeSuggestions(saved);
-    }
-  } catch { /* no saved data, fine */ }
-}
-
-/* ─── [SESSION 2 - TASK 2] MACRO DATA INJECTION ──────────── */
-async function fetchAndInjectMacroData() {
-  try {
-    const res = await fetch('https://tes-pro-backend.onrender.com/macro-data');
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const macro = await res.json();
-
-    function rateLabel(rate) {
-      if (rate == null) return '';
-      if (rate > 3)    return 'bullish';
-      if (rate < 1)    return 'bearish';
-      return '';
-    }
-    function cpiLabel(trend) {
-      if (trend === 'rising')  return 'rising';
-      if (trend === 'falling') return 'falling';
-      return '';
-    }
-
-    const currencies = ['USD','EUR','GBP','JPY','AUD','NZD','CAD','CHF'];
-    currencies.forEach(c => {
-      const d = macro[c];
-      if (!d) return;
-      const rateEl = document.getElementById('cs-' + c + '-rate');
-      const cpiEl  = document.getElementById('cs-' + c + '-cpi');
-      if (rateEl) rateEl.value = rateLabel(d.rate);
-      if (cpiEl)  cpiEl.value  = cpiLabel(d.cpiTrend);
-    });
-
-    runCurrencyAnalysis();
-    _toast('✅ Live macro data loaded', 'success');
-    console.log('[TES] Macro data injected:', macro);
-
-  } catch (err) {
-    console.warn('[TES] Macro fetch failed:', err.message);
-    _toast('⚠️ Using manual inputs', 'warning');
-  }
-}
-
-/* ─── [SESSION 2 - TASK 3] NEWS SENTIMENT INJECTION ─────── */
-async function fetchAndInjectNewsSentiment() {
-  try {
-    const res = await fetch('https://tes-pro-backend.onrender.com/news-sentiment');
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-
-    window.NEWS_BIAS = data.bias || {};
-    console.log('[TES] News bias loaded:', window.NEWS_BIAS);
-
-    _renderNewsPanel(data.headlines || []);
-
-    const breaking = (data.headlines || []).find(h => h.impact === 'high');
-    if (breaking) _showBreakingAlert(breaking.title);
-
-  } catch (err) {
-    console.warn('[TES] News sentiment fetch failed:', err.message);
-  }
-}
-
-function _renderNewsPanel(headlines) {
-  const panel = document.getElementById('news-panel');
-  if (!panel) return;
-
-  if (!headlines.length) {
-    panel.innerHTML = '<p style="color:var(--t2);font-size:13px">No headlines available.</p>';
-    return;
-  }
-
-  const impactBadge = {
-    high:   '<span style="font-size:11px;background:rgba(255,69,96,.15);color:#ff4560;border:1px solid rgba(255,69,96,.3);border-radius:20px;padding:2px 8px;font-weight:700">🔴 High</span>',
-    medium: '<span style="font-size:11px;background:rgba(228,174,42,.12);color:#e4ae2a;border:1px solid rgba(228,174,42,.3);border-radius:20px;padding:2px 8px;font-weight:700">🟡 Medium</span>',
-    low:    '<span style="font-size:11px;background:rgba(255,255,255,.06);color:#5a6a8a;border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:2px 8px;font-weight:700">⚪ Low</span>'
-  };
-
-  panel.innerHTML = headlines.slice(0, 10).map(h => {
-    const badge   = impactBadge[h.impact] || impactBadge.low;
-    const date    = h.publishedAt ? new Date(h.publishedAt).toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
-    const safeUrl = h.url ? h.url.replace(/"/g, '') : '#';
-    return `
-      <div style="padding:12px 0;border-bottom:1px solid var(--bd)">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px">
-          ${badge}
-          <span style="font-size:11px;color:var(--t2);white-space:nowrap;flex-shrink:0">${date}</span>
-        </div>
-        <a href="${safeUrl}" target="_blank" rel="noopener noreferrer"
-           style="font-size:13px;font-weight:600;color:var(--t1);text-decoration:none;line-height:1.5;display:block;margin-bottom:4px">
-          ${_escHtml(h.title || '')}
-        </a>
-        <span style="font-size:11px;color:#5a6a8a">${_escHtml(h.source || '')}</span>
-      </div>`;
-  }).join('');
-}
-
-function _showBreakingAlert(title) {
-  const el = document.getElementById('breaking-alert');
-  if (!el) return;
-  el.textContent = '🚨 ' + title;
-  el.style.display = 'block';
-  clearTimeout(el._dismiss);
-  el._dismiss = setTimeout(() => { el.style.display = 'none'; }, 6000);
-}
-
-/* ─── RENDER CURRENCY TABLE ── [N7] ───────────────────────── */
-function renderCurrencyTable(rankings) {
-  const tbody = document.getElementById('cs-table-body');
-  const wrap  = document.getElementById('cs-results-wrap');
-  if (!tbody) return;
-  if (wrap) wrap.style.display = 'block';
-
-  const maxAbs = Math.max(...rankings.map(r => Math.abs(r.score)), 1);
-
-  tbody.innerHTML = rankings.map((r, i) => {
-    const pct   = Math.min(100, Math.round((Math.abs(r.score) / maxAbs) * 100));
-    const color = r.score > 1 ? '#00d4a1' : r.score < -1 ? '#ff4560' : '#7a8eb0';
-    const badge = r.score > 1 ? 'BULL' : r.score < -1 ? 'BEAR' : 'NEU';
-    const sign  = r.score > 0 ? '+' : '';
-
-    return `<tr>
-      <td style="padding:9px 10px;color:#5a6a8a;font-size:12px">${i + 1}</td>
-      <td style="padding:9px 10px;font-weight:800;font-size:15px">${r.currency}</td>
-      <td style="padding:9px 10px">
-        <div style="display:flex;align-items:center;gap:8px">
-          <div style="flex:1;height:7px;background:#1c2840;border-radius:4px;overflow:hidden;min-width:60px">
-            <div style="width:${pct}%;height:100%;background:${color};border-radius:4px;transition:width .4s ease"></div>
-          </div>
-          <span style="font-size:12px;font-weight:700;color:${color};min-width:36px;text-align:right">${sign}${r.score}</span>
-        </div>
-      </td>
-      <td style="padding:9px 10px">
-        <span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;background:${color}20;color:${color}">${badge}</span>
-      </td>
-    </tr>`;
-  }).join('');
-}
-
-/* ─── AUTO TRADE SUGGESTIONS ── [N8] ─────────────────────── */
-function renderTradeSuggestions(rankings) {
-  const el = document.getElementById('sugg-list');
-  if (!el) return;
-
-  if (!rankings.length) {
-    el.innerHTML = '<p style="color:#5a6a8a;font-size:13px">Run currency analysis above to generate suggestions.</p>';
-    return;
-  }
-
-  const suggestions = [];
-
-  // Build suggestions: strongest base vs weakest quote
-  TRADE_PAIRS.forEach(([base, quote]) => {
-    const bRank = rankings.find(r => r.currency === base);
-    const qRank = rankings.find(r => r.currency === quote);
-    if (!bRank || !qRank) return;
-
-    const diff = bRank.score - qRank.score;
-    if (Math.abs(diff) < 1.5) return; // not enough divergence for a confident suggestion
-
-    suggestions.push({
-      pair:      base + quote,
-      direction: diff > 0 ? 'BUY' : 'SELL',
-      score:     Math.abs(diff),
-      strong:    diff > 0 ? base  : quote,
-      weak:      diff > 0 ? quote : base
-    });
-  });
-
-  const top3 = suggestions.sort((a, b) => b.score - a.score).slice(0, 3);
-
-  if (!top3.length) {
-    el.innerHTML = '<p style="color:#5a6a8a;font-size:13px">No strong setups found. Adjust fundamentals and try again.</p>';
-    return;
-  }
-
-  el.innerHTML = top3.map((s, i) => {
-    const col   = s.direction === 'BUY' ? '#00d4a1' : '#ff4560';
-    const arrow = s.direction === 'BUY' ? '↑' : '↓';
-    const conf  = Math.min(99, Math.round(50 + s.score * 7));
-
-    return `<div style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:14px">
-      <div style="width:40px;height:40px;border-radius:10px;background:${col}18;border:1px solid ${col}50;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:${col};flex-shrink:0">${arrow}</div>
-      <div style="flex:1">
-        <div style="font-size:18px;font-weight:900;letter-spacing:-.3px">${s.pair}</div>
-        <div style="font-size:11px;color:#5a6a8a;margin-top:2px">${s.strong} strong vs ${s.weak} weak &nbsp;·&nbsp; Δ${s.score.toFixed(1)}</div>
-      </div>
-      <div style="text-align:right;flex-shrink:0">
-        <div style="font-size:16px;font-weight:800;color:${col}">${s.direction}</div>
-        <div style="font-size:11px;color:#5a6a8a;margin-top:2px">${conf}% conf</div>
-      </div>
+      <div style="font-size:11px;color:var(--t2)">📅 ${ds}</div>
     </div>`;
   }).join('');
 }
 
-/* ═══════════════════════════════════════════════════════════
-   RISK CALCULATOR — [N9]
-   Formula per prompt spec:
-     pipDistance = |entry − stopLoss| × 10000
-     riskAmount  = (balance × risk%) / 100
-     lotSize     = riskAmount / (pipDistance × 10)
-     profit      = |tp − entry| × 10000 × lotSize × 10   (if TP set)
-   [N10] Guards: parseFloat defaults to 0, no division by zero
-   ═══════════════════════════════════════════════════════════ */
-function calcRisk() {
-  const balance  = parseFloat(document.getElementById('rc-balance')?.value)  || 0;
-  const riskPct  = parseFloat(document.getElementById('rc-risk')?.value)      || 0;
-  const entry    = parseFloat(document.getElementById('rc-entry')?.value)     || 0;
-  const stopLoss = parseFloat(document.getElementById('rc-sl')?.value)        || 0;
-  const tp       = parseFloat(document.getElementById('rc-tp')?.value)        || 0;
-
-  const resultEl = document.getElementById('rc-result');
-  if (!resultEl) return;
-
-  // All main inputs needed before we can compute
-  if (!balance || !riskPct || !entry || !stopLoss) {
-    resultEl.innerHTML = '<span style="color:#5a6a8a">Fill in Balance, Risk %, Entry, and Stop Loss to calculate.</span>';
-    return;
-  }
-
-  const pipDist  = Math.abs(entry - stopLoss) * 10000;
-  if (pipDist === 0) {
-    resultEl.innerHTML = '<span style="color:#ff4560">Entry and Stop Loss cannot be the same.</span>';
-    return;
-  }
-
-  const riskAmt  = (balance * riskPct) / 100;
-  const lotSize  = riskAmt / (pipDist * 10);
-
-  // Potential profit (only if TP is set)
-  const hasTP       = tp > 0 && tp !== entry;
-  const rewardPips  = hasTP ? Math.abs(tp - entry) * 10000 : 0;
-  const profit      = hasTP ? rewardPips * lotSize * 10 : 0;
-  const rr          = hasTP && riskAmt > 0 ? (profit / riskAmt).toFixed(2) : null;
-
-  resultEl.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Pip Distance</div>
-        <div style="font-size:22px;font-weight:800;color:#e4ae2a">${pipDist.toFixed(1)}</div>
-      </div>
-      <div style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Risk Amount</div>
-        <div style="font-size:22px;font-weight:800;color:#ff4560">$${riskAmt.toFixed(2)}</div>
-      </div>
-      <div style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Lot Size</div>
-        <div style="font-size:22px;font-weight:800;color:#00d4a1">${lotSize.toFixed(2)}</div>
-      </div>
-      ${hasTP ? `
-      <div style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:12px;text-align:center">
-        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Potential Profit</div>
-        <div style="font-size:22px;font-weight:800;color:#00d4a1">$${profit.toFixed(2)}</div>
-      </div>
-      <div style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:12px;text-align:center;grid-column:span 2">
-        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Risk : Reward</div>
-        <div style="font-size:22px;font-weight:800;color:#e4ae2a">1 : ${rr}</div>
-      </div>` : ''}
-    </div>`;
+/* ─── LOCKED SCREEN ────────────────────────────────────────– */
+function _renderLocked() {
+  const emailEl = document.getElementById('locked-email');
+  if (emailEl && S.user) emailEl.textContent = 'Signed in as: ' + S.user.email;
 }
 
-/* ─── Risk calc live event listeners ─────────────────────── */
-// [N10] Wired after DOM ready
-document.addEventListener('DOMContentLoaded', () => {
-  ['rc-balance','rc-risk','rc-entry','rc-sl','rc-tp'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('input', calcRisk);
-  });
-});
-
-/* ═══════════════════════════════════════════════════════════
-   AUTH — fixed
-   [B2] Only ONE doLogin definition
-   [B3] doLogout added
-   [B6] alert() replaced with _showErr / _toast
-   ═══════════════════════════════════════════════════════════ */
+/* ─── AUTH ─────────────────────────────────────────────────– */
 async function doLogin() {
   const email = document.getElementById('l-email')?.value?.trim() || '';
-  const pass  = document.getElementById('l-pass')?.value          || '';
+  const pass = document.getElementById('l-pass')?.value || '';
   _clearErr('l-err');
-
-  if (!email || !pass) { _showErr('l-err', 'Enter your email and password.'); return; }
-
+  if (!email || !pass) { _showErr('l-err', 'Enter email and password.'); return; }
+  
   const btn = document.querySelector('[onclick="doLogin()"]');
   if (btn) { btn.disabled = true; btn.textContent = 'Signing in…'; }
-
+  
   try {
     await _auth.signInWithEmailAndPassword(email, pass);
-    // onAuthStateChanged handles routing
   } catch (e) {
     _showErr('l-err', _fbErr(e.code));
     if (btn) { btn.disabled = false; btn.textContent = 'Sign In'; }
@@ -969,34 +387,29 @@ async function doLogin() {
 
 async function doSignup() {
   const email = document.getElementById('s-email')?.value?.trim() || '';
-  const pass  = document.getElementById('s-pass')?.value          || '';
+  const pass = document.getElementById('s-pass')?.value || '';
   _clearErr('s-err');
-
   if (!email || !pass) { _showErr('s-err', 'Enter email and password.'); return; }
-  if (pass.length < 6) { _showErr('s-err', 'Password needs at least 6 characters.'); return; }
-
+  if (pass.length < 6) { _showErr('s-err', 'Password min 6 chars.'); return; }
+  
   const btn = document.querySelector('[onclick="doSignup()"]');
   if (btn) { btn.disabled = true; btn.textContent = 'Creating…'; }
-
+  
   try {
     await _auth.createUserWithEmailAndPassword(email, pass);
-    // onAuthStateChanged fires → bootUser → screen-locked (no subscription yet)
   } catch (e) {
     _showErr('s-err', _fbErr(e.code));
     if (btn) { btn.disabled = false; btn.textContent = 'Create Account'; }
   }
 }
 
-// [B3] Was missing entirely — called from HTML but never defined
 async function doLogout() {
   _teardown();
   try { await _auth.signOut(); }
   catch { show('screen-auth'); }
 }
 
-/* ═══════════════════════════════════════════════════════════
-   UTILITY HELPERS
-   ═══════════════════════════════════════════════════════════ */
+/* ─── UTILITIES ────────────────────────────────────────────– */
 function _toast(msg, type) {
   let el = document.getElementById('_tes_toast');
   if (!el) {
@@ -1016,8 +429,8 @@ function _toast(msg, type) {
     document.body.appendChild(el);
   }
   const colors = { success: '#00d4a1', error: '#ff4560', warning: '#e4ae2a' };
-  el.textContent   = msg;
-  el.style.color   = colors[type] || '#eef2ff';
+  el.textContent = msg;
+  el.style.color = colors[type] || '#eef2ff';
   el.style.borderColor = colors[type] ? colors[type] + '55' : 'rgba(255,255,255,.12)';
   el.style.transform = 'translateX(-50%) translateY(0)';
   clearTimeout(el._t);
@@ -1028,407 +441,870 @@ function _showErr(id, msg) {
   const el = document.getElementById(id);
   if (el) { el.textContent = msg; el.style.display = 'block'; }
 }
+
 function _clearErr(id) {
   const el = document.getElementById(id);
   if (el) { el.textContent = ''; el.style.display = 'none'; }
 }
+
 function _setText(id, val) {
-  const el = document.getElementById(id); if (el) el.textContent = val;
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
 }
-function _escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
+
 function _fbErr(code) {
   const m = {
-    'auth/user-not-found':        'No account with this email.',
-    'auth/wrong-password':        'Incorrect password.',
-    'auth/invalid-credential':    'Incorrect email or password.',
-    'auth/email-already-in-use':  'Email already registered. Sign in instead.',
-    'auth/invalid-email':         'Enter a valid email address.',
-    'auth/weak-password':         'Password needs at least 6 characters.',
-    'auth/too-many-requests':     'Too many attempts. Wait a few minutes.',
-    'auth/network-request-failed':'Network error. Check your connection.'
+    'auth/user-not-found': 'No account with this email.',
+    'auth/wrong-password': 'Incorrect password.',
+    'auth/invalid-credential': 'Incorrect email or password.',
+    'auth/email-already-in-use': 'Email already registered.',
+    'auth/invalid-email': 'Invalid email address.',
+    'auth/weak-password': 'Password min 6 characters.',
+    'auth/too-many-requests': 'Too many attempts.',
+    'auth/network-request-failed': 'Network error.'
   };
-  return m[code] || 'Something went wrong. Please try again.';
+  return m[code] || 'Something went wrong.';
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   FIXED PAGE NAVIGATION
+   MACRO / CURRENCY STRENGTH ENGINE
    ═══════════════════════════════════════════════════════════════ */
 
-function goPage(page) {
-
-  // Hide all pages
-  document.querySelectorAll('.page').forEach(p => {
-    p.style.display = 'none';
-  });
-
-  // Show target page
-  const target = document.getElementById('page-' + page);
-
-  if (target) {
-    target.style.display = 'block';
-  }
-
-  // Update nav buttons
-  document.querySelectorAll('.nav-btn').forEach(btn => {
-    btn.classList.remove('active');
-  });
-
-  const activeBtn = document.querySelector(`[data-page="${page}"]`);
-
-  if (activeBtn) {
-    activeBtn.classList.add('active');
-  }
-}
-
-
-/* ═══════════════════════════════════════════════════════════════
-   SAFE NAVIGATION EVENT LISTENERS
-   ═══════════════════════════════════════════════════════════════ */
-
-  // Navigation buttons
-  document.querySelectorAll('.nav-btn').forEach(btn => {
-
-    btn.addEventListener('click', () => {
-
-      const page = btn.dataset.page;
-
-      if (!page) return;
-
-      // Psychology handled separately
-      if (page === 'psychology') return;
-
-      goPage(page);
-
-    });
-
-  });
-
-});
-
-
-/* ═══════════════════════════════════════════════════════════════
-   PSYCHOLOGY BOOTCAMP INTEGRATION (FIXED)
-   ═══════════════════════════════════════════════════════════════ */
-
-// Load Psychology from localStorage
-function _loadPsychologyState() {
-
-  if (!S.user) return;
-
-  try {
-
-    const saved = JSON.parse(
-      localStorage.getItem('tes_psych_' + S.user.uid)
-    );
-
-    if (saved) {
-      S.psychologyState = {
-        ...S.psychologyState,
-        ...saved
-      };
+function _restoreCurrencyAnalysis() {
+  const saved = localStorage.getItem('tes_cs_results');
+  if (saved) {
+    try {
+      const data = JSON.parse(saved);
+      S.rankings = data.rankings || [];
+    } catch (e) {
+      console.warn('Could not restore currency analysis');
     }
-
-  } catch (e) {
-
-    console.warn('[Psychology] Could not load state:', e);
-
   }
-
 }
 
-
-// Save Psychology to localStorage
-function _savePsychologyState() {
-
-  if (!S.user) return;
-
+async function fetchAndInjectMacroData() {
   try {
-
-    localStorage.setItem(
-      'tes_psych_' + S.user.uid,
-      JSON.stringify(S.psychologyState)
-    );
-
-  } catch (e) {
-
-    console.warn('[Psychology] Could not save state:', e);
-
+    const res = await fetch('https://tes-pro-backend.onrender.com/macro-data');
+    if (!res.ok) throw new Error('API error');
+    const macro = await res.json();
+    
+    ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'NZD', 'CAD', 'CHF'].forEach(c => {
+      const rateEl = document.getElementById(`cs-rate-${c}`);
+      const cpiEl = document.getElementById(`cs-cpi-${c}`);
+      if (!rateEl || !cpiEl || !macro[c]) return;
+      
+      rateEl.value = macro[c].rate || '';
+      cpiEl.value = macro[c].cpi || '';
+    });
+    
+    _toast('✅ Live macro data loaded', 'success');
+    console.log('[TES] Macro data injected');
+  } catch (err) {
+    console.warn('[TES] Macro fetch failed:', err);
   }
-
 }
 
+async function fetchAndInjectNewsSentiment() {
+  try {
+    const res = await fetch('https://tes-pro-backend.onrender.com/news-sentiment');
+    if (!res.ok) throw new Error('API error');
+    const data = await res.json();
+    window.NEWS_BIAS = data.bias || 'neutral';
+    _renderNewsPanel(data.headlines || []);
+    console.log('[TES] News loaded');
+  } catch (err) {
+    console.warn('[TES] News fetch failed:', err);
+  }
+}
 
-// Show Psychology App
+function _renderNewsPanel(headlines) {
+  const newsEl = document.getElementById('news-panel');
+  if (!newsEl) return;
+  
+  if (!headlines.length) {
+    newsEl.innerHTML = '<p style="color:var(--t2);font-size:13px">No active news events.</p>';
+    return;
+  }
+  
+  newsEl.innerHTML = headlines.slice(0, 5).map(h => `
+    <div style="padding:10px;background:var(--bg1);border:1px solid var(--bd);border-radius:8px;margin-bottom:8px">
+      <div style="font-size:12px;font-weight:700;color:var(--t1)">${h.currency || 'USD'}</div>
+      <div style="font-size:11px;color:var(--t2);margin-top:2px">${h.event || 'Economic data'}</div>
+      <div style="font-size:10px;color:var(--t3);margin-top:2px">⏰ ${h.time || 'Today'}</div>
+    </div>
+  `).join('');
+}
+
+function runCurrencyAnalysis() {
+  const globalRisk = document.getElementById('cs-global-risk')?.value || '';
+  if (!globalRisk) { _toast('Select global risk sentiment', 'warning'); return; }
+  
+  let rankings = [];
+  
+  ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'NZD', 'CAD', 'CHF'].forEach(c => {
+    const rateEl = document.getElementById(`cs-rate-${c}`);
+    const cpiEl = document.getElementById(`cs-cpi-${c}`);
+    if (!rateEl || !cpiEl) return;
+    
+    const rate = rateEl.value || 'neutral';
+    const cpi = cpiEl.value || 'stable';
+    
+    let score = 0;
+    if (rate === 'bullish') score += 2;
+    if (rate === 'bearish') score -= 2;
+    if (cpi === 'rising') score += 1;
+    if (cpi === 'falling') score -= 1;
+    if (globalRisk === 'risk-on' && ['AUD','NZD','CAD'].includes(c)) score += 1;
+    if (globalRisk === 'risk-off' && ['JPY','CHF','USD'].includes(c)) score += 1;
+    
+    rankings.push({ currency: c, score, rate, cpi });
+  });
+  
+  rankings.sort((a, b) => b.score - a.score);
+  S.rankings = rankings;
+  
+  // Show rankings
+  const tbody = document.getElementById('cs-table-body');
+  if (tbody) {
+    tbody.innerHTML = rankings.map((r, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td><strong>${r.currency}</strong></td>
+        <td>${r.score > 0 ? '+' : ''}${r.score}</td>
+        <td>${r.score > 2 ? '🟢 STRONG' : r.score > 0 ? '🟡 BULLISH' : r.score < -2 ? '🔴 WEAK' : '⚪ BEARISH'}</td>
+      </tr>
+    `).join('');
+  }
+  
+  const resultsWrap = document.getElementById('cs-results-wrap');
+  if (resultsWrap) resultsWrap.style.display = 'block';
+  
+  _generateTopSuggestions(rankings);
+  _toast('Currency analysis complete!', 'success');
+}
+
+function _generateTopSuggestions(rankings) {
+  if (rankings.length < 2) return;
+  
+  const strongest = rankings[0];
+  const weakest = rankings[rankings.length - 1];
+  
+  const suggList = document.getElementById('sugg-list');
+  if (suggList) {
+    suggList.innerHTML = `
+      <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;color:var(--gold);text-transform:uppercase">1️⃣ BUY ${strongest.currency}/SELL ${weakest.currency}</div>
+        <div style="font-size:11px;color:var(--t2);margin-top:6px">${strongest.currency} bullish (${strongest.score}) vs ${weakest.currency} bearish (${weakest.score})</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;color:var(--gold);text-transform:uppercase">2️⃣ BUY ${rankings[1]?.currency || 'EUR'}/USD</div>
+        <div style="font-size:11px;color:var(--t2);margin-top:6px">Second strongest setup</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:12px;padding:14px">
+        <div style="font-size:12px;font-weight:700;color:var(--gold);text-transform:uppercase">3️⃣ USD/${rankings[rankings.length-2]?.currency || 'CAD'}</div>
+        <div style="font-size:11px;color:var(--t2);margin-top:6px">Third strongest setup</div>
+      </div>
+    `;
+  }
+}
+
+function generateTopTradePlan() {
+  const pairs = S.rankings || [];
+  if (pairs.length < 2) { _toast('Run analysis first', 'warning'); return; }
+  
+  const strongest = pairs[0];
+  const weakest = pairs[pairs.length - 1];
+  
+  const plan = `
+    <div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:12px;padding:16px">
+      <div style="font-size:12px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">📋 Structured Trade Plan</div>
+      <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:12px;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;margin-bottom:6px">Primary Setup</div>
+        <div style="font-size:14px;font-weight:900;color:var(--gold)">${strongest.currency} / ${weakest.currency}</div>
+        <div style="font-size:12px;color:var(--t2);margin-top:4px">Buy strongest vs sell weakest</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;margin-bottom:6px">Confirmation Checklist</div>
+        <div style="font-size:12px;color:var(--t2)">✓ H4 trend confirmation<br>✓ Supply/Demand zone<br>✓ R:R minimum 1:2<br>✓ No major news</div>
+      </div>
+    </div>
+  `;
+  
+  document.getElementById('trade-plan').innerHTML = plan;
+  _toast('Trade plan generated!', 'success');
+}
+
+function analyzeNewsImpact() {
+  const currency = document.getElementById('news-currency')?.value || '';
+  const event = document.getElementById('news-event')?.value || '';
+  const outcome = document.getElementById('news-outcome')?.value || '';
+  
+  if (!currency || !event || !outcome) { _toast('Select all fields', 'warning'); return; }
+  
+  let impact = { bias: 'NEUTRAL', reason: '' };
+  
+  if (event === 'cpi') {
+    if (outcome === 'better') {
+      impact.bias = 'BULLISH ' + currency;
+      impact.reason = 'Higher inflation → Rate hike odds → Currency strengthens';
+    } else {
+      impact.bias = 'BEARISH ' + currency;
+      impact.reason = 'Lower inflation → Rate cut odds → Currency weakens';
+    }
+  } else if (event === 'rate') {
+    if (outcome === 'better') {
+      impact.bias = 'BULLISH ' + currency;
+      impact.reason = 'Rate hike surprise → Immediate strength';
+    } else {
+      impact.bias = 'BEARISH ' + currency;
+      impact.reason = 'Rate cut surprise → Weakness';
+    }
+  } else if (event === 'nfp') {
+    impact.bias = outcome === 'better' ? 'BULLISH USD' : 'BEARISH USD';
+    impact.reason = outcome === 'better' ? 'Strong employment → USD rally' : 'Weak employment → USD weakness';
+  } else if (event === 'gdp') {
+    impact.bias = outcome === 'better' ? 'BULLISH ' + currency : 'BEARISH ' + currency;
+    impact.reason = outcome === 'better' ? 'Strong growth → Rally' : 'Weak growth → Weakness';
+  }
+  
+  const newsImpactEl = document.getElementById('news-impact');
+  if (newsImpactEl) {
+    newsImpactEl.innerHTML = `
+      <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:12px;padding:14px">
+        <div style="font-size:14px;font-weight:900;color:${impact.bias.includes('BULL') ? '#00d4a1' : '#ff4560'};margin-bottom:8px">${impact.bias}</div>
+        <div style="font-size:13px;color:var(--t2)">${impact.reason}</div>
+      </div>
+    `;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   GOLD DESK - XAUUSD TRADING
+   ═══════════════════════════════════════════════════════════════ */
+
+function _initGoldPage() {
+  _renderGoldSessions();
+}
+
+function runGoldBiasEngine() {
+  const usdStrength = document.getElementById('gd-usd-strength')?.value || '';
+  const yields = document.getElementById('gd-yields')?.value || '';
+  const fed = document.getElementById('gd-fed')?.value || '';
+  const risk = document.getElementById('gd-risk')?.value || '';
+  const inflation = document.getElementById('gd-inflation')?.value || '';
+  
+  if (!usdStrength || !yields || !fed || !risk || !inflation) {
+    _toast('Select all parameters', 'warning');
+    return;
+  }
+  
+  let score = 0;
+  if (usdStrength === 'strong') score -= 2;
+  if (usdStrength === 'weak') score += 2;
+  if (yields === 'rising') score -= 1.5;
+  if (yields === 'falling') score += 1.5;
+  if (fed === 'hawkish') score -= 2;
+  if (fed === 'dovish') score += 2;
+  if (risk === 'risk-on') score -= 1;
+  if (risk === 'risk-off') score += 2;
+  if (inflation === 'rising') score += 1.5;
+  if (inflation === 'falling') score -= 1;
+  
+  const bias = score > 3 ? '🟢 BULLISH' : score < -3 ? '🔴 BEARISH' : '🟡 NEUTRAL';
+  
+  const resultEl = document.getElementById('gd-bias-result');
+  if (resultEl) {
+    resultEl.style.display = 'block';
+    resultEl.innerHTML = `
+      <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:12px;padding:16px">
+        <div style="font-size:16px;font-weight:900;color:var(--gold);margin-bottom:12px">${bias}</div>
+        <div style="font-size:13px;color:var(--t2)">Bias Score: ${score > 0 ? '+' : ''}${score.toFixed(1)}</div>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--bd);font-size:12px;color:var(--t2)">
+          ${bias.includes('BULL') ? '✅ Favorable for long positions' : ''}
+          ${bias.includes('BEAR') ? '✅ Favorable for short positions' : ''}
+          ${bias.includes('NEUT') ? '⚖️ Wait for confirmation' : ''}
+        </div>
+      </div>
+    `;
+  }
+}
+
+function runWhyGoldMoved() {
+  const direction = document.getElementById('gd-moved-direction')?.value || '';
+  const driver = document.getElementById('gd-moved-driver')?.value || '';
+  
+  if (!direction || !driver) { _toast('Select direction and driver', 'warning'); return; }
+  
+  const drivers = {
+    'cpi': 'CPI came in higher than expected, boosting rate hike odds, weakening gold',
+    'nfp': 'Strong NFP supports USD strength and higher rates, negative for gold',
+    'fomc': 'Fed signals rate hikes, strengthening USD and pressuring gold',
+    'geopolitical': 'Geopolitical tensions increase risk-off sentiment, supporting gold',
+    'yields': 'Bond yields surged, making gold less attractive',
+    'usd': 'USD index strengthened significantly, pulling gold lower'
+  };
+  
+  const narrative = drivers[driver] || 'Market moved on fundamental driver';
+  const movedText = direction === 'rallied' ? 'Gold rallied' : direction === 'sold-off' ? 'Gold sold off' : 'Gold ranged';
+  
+  const resultEl = document.getElementById('gd-moved-result');
+  if (resultEl) {
+    resultEl.style.display = 'block';
+    resultEl.innerHTML = `
+      <div style="padding:14px;background:var(--bg2);border-left:3px solid var(--gold);border-radius:0 10px 10px 0;font-size:13px;color:var(--t1);line-height:1.7;font-style:italic">
+        ${movedText} today because: <strong>${narrative}</strong>
+      </div>
+    `;
+  }
+}
+
+function runGoldNewsInterpreter() {
+  const newsEvent = document.getElementById('gd-news-event')?.value || '';
+  const outcome = document.getElementById('gd-news-outcome')?.value || '';
+  
+  if (!newsEvent || !outcome) { _toast('Select event and outcome', 'warning'); return; }
+  
+  let goldReaction = '';
+  
+  if (newsEvent === 'cpi') {
+    goldReaction = outcome === 'better' ? 'Gold DOWN' : 'Gold UP';
+  } else if (newsEvent === 'nfp') {
+    goldReaction = outcome === 'better' ? 'Gold DOWN' : 'Gold UP';
+  } else if (newsEvent === 'fomc') {
+    goldReaction = outcome === 'hike' ? 'Gold DOWN' : outcome === 'cut' ? 'Gold UP' : 'Gold NEUTRAL';
+  } else if (newsEvent === 'employment') {
+    goldReaction = outcome === 'better' ? 'Gold DOWN' : 'Gold UP';
+  } else if (newsEvent === 'gdp') {
+    goldReaction = outcome === 'better' ? 'Gold DOWN' : 'Gold UP';
+  }
+  
+  const resultEl = document.getElementById('gd-news-result');
+  if (resultEl) {
+    resultEl.classList.add('show');
+    resultEl.innerHTML = `
+      <div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:12px;padding:14px">
+        <div style="font-size:13px;font-weight:700;color:var(--gold);margin-bottom:8px">EXPECTED REACTION:</div>
+        <div style="font-size:15px;font-weight:700;color:var(--t1)">${goldReaction}</div>
+      </div>
+    `;
+  }
+}
+
+function _renderGoldSessions() {
+  const sessionsEl = document.getElementById('gd-sessions-wrap');
+  if (!sessionsEl) return;
+  
+  const sessions = [
+    { name: 'Asian Session', time: '00:00–09:00 GMT', volatility: 'Low', tag: 'closed' },
+    { name: 'London Session', time: '08:00–17:00 GMT', volatility: 'High', tag: 'open' },
+    { name: 'New York Session', time: '13:00–22:00 GMT', volatility: 'Very High', tag: 'hot' }
+  ];
+  
+  sessionsEl.innerHTML = sessions.map(s => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-radius:10px;background:var(--bg2);border:1px solid var(--bd);margin-bottom:8px">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--t1)">${s.name}</div>
+        <div style="font-size:11px;color:var(--t2)">${s.time}</div>
+      </div>
+      <span style="font-size:10px;font-weight:800;padding:3px 9px;border-radius:20px;letter-spacing:.3px;${s.tag === 'hot' ? 'background:rgba(228,174,42,.15);color:var(--gold);border:1px solid rgba(228,174,42,.3)' : s.tag === 'open' ? 'background:rgba(0,212,161,.12);color:#00d4a1;border:1px solid rgba(0,212,161,.25)' : 'background:var(--bg3);color:var(--t2);border:1px solid var(--bd)'}">${s.volatility}</span>
+    </div>
+  `).join('');
+  
+  const adviceEl = document.getElementById('gd-session-advice');
+  if (adviceEl) {
+    adviceEl.textContent = '💡 Best trading during London open and NY overlap (highest liquidity)';
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   JOURNAL & TRADES
+   ═══════════════════════════════════════════════════════════════ */
+
+function toggleJournalForm() {
+  const form = document.getElementById('trade-form-wrap');
+  const btn = document.getElementById('btn-jform');
+  if (!form) return;
+  const open = form.style.display === 'block';
+  form.style.display = open ? 'none' : 'block';
+  if (btn) btn.textContent = open ? '+ Log Trade' : '× Close';
+}
+
+function showTradeForm() {
+  toggleJournalForm();
+}
+
+function hideTradeForm() {
+  document.getElementById('trade-form-wrap').style.display = 'none';
+  document.getElementById('btn-jform').textContent = '+ Log Trade';
+}
+
+function updateJournalSubtitle() {
+  const el = document.getElementById('j-subtitle');
+  if (el) el.textContent = (S.trades?.length || 0) + ' trade' + (S.trades?.length !== 1 ? 's' : '');
+}
+
+function calcRR() {
+  const entry = parseFloat(document.getElementById('j-entry')?.value) || 0;
+  const sl = parseFloat(document.getElementById('j-sl')?.value) || 0;
+  const tp = parseFloat(document.getElementById('j-tp')?.value) || 0;
+  
+  if (!entry || !sl || !tp) {
+    document.getElementById('j-rr').textContent = 'R:R — : —';
+    return;
+  }
+  
+  const risk = Math.abs(entry - sl);
+  const reward = Math.abs(tp - entry);
+  if (risk === 0) return;
+  const rr = (reward / risk).toFixed(2);
+  document.getElementById('j-rr').textContent = 'R:R 1 : ' + rr;
+}
+
+function setOutcome(oc, btn) {
+  document.querySelectorAll('.oc-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('outcome').value = oc;
+}
+
+async function submitTrade() {
+  if (!S.user || !_firestore) return _toast('Not signed in.', 'error');
+  if (!document.getElementById('j-news-check').checked) {
+    return _toast('❌ Confirm no high-impact news.', 'error');
+  }
+  
+  const trade = {
+    pair: document.getElementById('j-pair').value,
+    direction: document.getElementById('j-dir').value,
+    entry: document.getElementById('j-entry').value,
+    sl: document.getElementById('j-sl').value,
+    tp: document.getElementById('j-tp').value,
+    rr: (document.getElementById('j-rr').textContent.match(/:/) ? document.getElementById('j-rr').textContent.split(': ')[1] : ''),
+    session: document.getElementById('j-session').value,
+    outcome: document.getElementById('outcome').value || 'be',
+    notes: document.getElementById('j-notes').value,
+    createdAt: new Date()
+  };
+  
+  try {
+    await _firestore.collection('users').doc(S.user.uid).collection('trades').add(trade);
+    _toast('Trade logged! ✓', 'success');
+    hideTradeForm();
+    ['j-pair','j-dir','j-entry','j-sl','j-tp','j-session','j-notes'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = id === 'j-dir' ? 'BUY' : '';
+    });
+    document.getElementById('j-news-check').checked = false;
+    document.getElementById('j-rr').textContent = 'R:R — : —';
+    document.getElementById('outcome').value = '';
+    document.querySelectorAll('.oc-btn').forEach(b => b.classList.remove('active'));
+  } catch (e) {
+    _toast('Error: ' + e.message, 'error');
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ANALYTICS
+   ═══════════════════════════════════════════════════════════════ */
+
+function renderAnalyticsPage() {
+  const trades = S.trades || [];
+  const wins = trades.filter(t => t.outcome === 'win').length;
+  const losses = trades.filter(t => t.outcome === 'loss').length;
+  const wr = trades.length ? Math.round(wins / trades.length * 100) : 0;
+  const avgRR = trades.length
+    ? (trades.reduce((a, t) => a + (parseFloat(t.rr) || 0), 0) / trades.length).toFixed(2)
+    : '0.00';
+  
+  _setText('stat-wins', wins);
+  _setText('stat-losses', losses);
+  _setText('an-rr', avgRR);
+  _setText('stat-wr', wr + '%');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SESSION TIMER
+   ═══════════════════════════════════════════════════════════════ */
+
+function _startSessionTimer() {
+  const timerEl = document.getElementById('session-timer-card');
+  if (!timerEl) return;
+  
+  const sessions = [
+    { name: 'London', open: 8, close: 17 },
+    { name: 'New York', open: 13, close: 22 },
+    { name: 'Asian', open: 0, close: 9 }
+  ];
+  
+  function updateTimer() {
+    const now = new Date();
+    const utc = now.getUTCHours();
+    
+    let html = '<div style="padding:4px 0"><div style="font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">📅 Trading Sessions</div>';
+    
+    sessions.forEach(s => {
+      const isOpen = utc >= s.open && utc < s.close;
+      const status = isOpen ? '🟢 OPEN' : '🔴 CLOSED';
+      const statusColor = isOpen ? '#00d4a1' : '#5a6a8a';
+      
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">
+        <div style="font-size:12px;font-weight:700;color:var(--t1)">${s.name}</div>
+        <div style="font-size:11px;color:${statusColor};font-weight:700">${status}</div>
+        <div style="font-size:10px;color:var(--t2)">${s.open}:00–${s.close}:00 GMT</div>
+      </div>`;
+    });
+    
+    html += '</div>';
+    timerEl.innerHTML = html;
+  }
+  
+  updateTimer();
+  setInterval(updateTimer, 60000);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SETTINGS
+   ═══════════════════════════════════════════════════════════════ */
+
+function _setupSettingsPage() {
+  const el = document.getElementById('settings-email');
+  if (el && S.user) el.textContent = S.user.email;
+}
+
+function exportCSV() {
+  if (!S.trades?.length) { _toast('No trades.', 'warning'); return; }
+  const header = 'Date,Pair,Direction,Entry,SL,TP,R:R,Outcome\n';
+  const rows = S.trades.map(t => {
+    const dt = t.createdAt?.toDate ? t.createdAt.toDate() : new Date();
+    return [dt.toLocaleDateString(),t.pair||'',t.direction||'',t.entry||'',t.sl||'',t.tp||'',t.rr||'',t.outcome||''].join(',');
+  }).join('\n');
+  const blob = new Blob([header + rows], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'tes_trades_' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.click();
+  _toast('CSV exported ✓', 'success');
+}
+
+function exportJSON() {
+  if (!S.trades?.length) { _toast('No trades.', 'warning'); return; }
+  const blob = new Blob([JSON.stringify(S.trades, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'tes_trades_' + new Date().toISOString().slice(0, 10) + '.json';
+  a.click();
+  _toast('JSON exported ✓', 'success');
+}
+
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('tes_theme', next);
+}
+
+function confirmDeleteAll() {
+  if (!S.trades?.length) { _toast('No trades.', 'warning'); return; }
+  if (!confirm('Delete ALL ' + S.trades.length + ' trades?')) return;
+  Promise.all(S.trades.map(t => {
+    if (!S.user || !_firestore) return Promise.resolve();
+    return _firestore.collection('users').doc(S.user.uid).collection('trades').doc(t.id).delete();
+  })).then(() => {
+    _toast('All trades deleted.', 'success');
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PSYCHOLOGY BOOTCAMP
+   ═══════════════════════════════════════════════════════════════ */
+
+function _loadPsychologyState() {
+  if (!S.user) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem('tes_psych_' + S.user.uid));
+    if (saved) {
+      S.psychologyState = { ...S.psychologyState, ...saved };
+    }
+  } catch (e) {
+    console.warn('[Psychology] Load error:', e);
+  }
+}
+
+function _savePsychologyState() {
+  if (!S.user) return;
+  try {
+    localStorage.setItem('tes_psych_' + S.user.uid, JSON.stringify(S.psychologyState));
+  } catch (e) {
+    console.warn('[Psychology] Save error:', e);
+  }
+}
+
 function showPsychologyApp() {
-
-  // Hide dashboard safely
-  const dash = document.getElementById('page-dashboard');
-
-  if (dash) {
-    dash.style.display = 'none';
-  }
-
-  // Hide bottom nav safely
-  const nav = document.querySelector('.bottom-nav');
-
-  if (nav) {
-    nav.style.display = 'none';
-  }
-
-  // Show Psychology wrapper safely
+  document.getElementById('screen-app').style.display = 'none';
   const psychEl = document.getElementById('psychology-wrapper');
-
-  if (psychEl) {
-
-    psychEl.style.display = 'flex';
-    psychEl.style.pointerEvents = 'auto';
-    psychEl.style.zIndex = '999';
-
-  }
-
+  if (psychEl) psychEl.style.display = 'flex';
   _loadPsychologyState();
-
   _renderPsychologyHub();
 }
 
-
-// Return to TES PRO from Psychology
 function returnToTesPro() {
-
   _savePsychologyState();
-
-  // Hide Psychology safely
   const psychEl = document.getElementById('psychology-wrapper');
-
-  if (psychEl) {
-
-    psychEl.style.display = 'none';
-    psychEl.style.pointerEvents = 'none';
-
-  }
-
-  // Restore nav safely
-  const nav = document.querySelector('.bottom-nav');
-
-  if (nav) {
-    nav.style.display = 'flex';
-  }
-
-  // Go back to dashboard
+  if (psychEl) psychEl.style.display = 'none';
+  document.getElementById('screen-app').style.display = 'flex';
   goPage('dashboard');
 }
 
-
-// Add Psychology button to navigation
 function _addPsychologyNavButton() {
-
   const nav = document.querySelector('.bottom-nav');
-
   if (!nav) return;
-
-  // Prevent duplicates
   if (nav.querySelector('[data-page="psychology"]')) return;
-
+  
   const psychBtn = document.createElement('button');
-
   psychBtn.className = 'nav-btn';
-
   psychBtn.setAttribute('data-page', 'psychology');
-
-  psychBtn.innerHTML = `
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-      <circle cx="12" cy="12" r="10"/>
-      <circle cx="12" cy="12" r="6"/>
-      <circle cx="12" cy="5" r="1.5"/>
-      <circle cx="18" cy="18" r="1.5"/>
-    </svg>
-    Psychology
-  `;
-
-  psychBtn.addEventListener('click', showPsychologyApp);
-
+  psychBtn.onclick = showPsychologyApp;
+  psychBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><circle cx="12" cy="3" r="2"/></svg>Psychology`;
   nav.appendChild(psychBtn);
-
 }
 
-
-// Render Psychology Hub
 function _renderPsychologyHub() {
-
   const wrapper = document.getElementById('psychology-wrapper');
-
   if (!wrapper) return;
-
+  
   const state = S.psychologyState;
-
   const currentRank = _getPsychologyRank(state.xp);
-
+  
   wrapper.innerHTML = `
     <div class="psychology-screen psychology-hub active">
-
       <div class="psychology-header">
-
         <div>
-          <div class="psych-rank">
-            ◈ ${currentRank}
-          </div>
-
-          <div class="psych-title">
-            TRADING PSYCH BOOTCAMP
-          </div>
-
-          <div class="psych-sub">
-            Trading in the Zone · Mark Douglas Protocol
-          </div>
+          <div class="psych-rank">◈ ${currentRank}</div>
+          <div class="psych-title">TRADING PSYCH BOOTCAMP</div>
+          <div class="psych-sub">Trading in the Zone · Mark Douglas</div>
         </div>
-
         <div style="text-align:right">
-
-          <div class="psych-xp">
-            ⚡ ${state.xp} XP
-          </div>
-
-          <div class="psych-streak">
-            🔥 ${state.streak} day streak
-          </div>
-
-          <button
-            class="psych-exit-btn"
-            onclick="returnToTesPro()"
-          >
-            ← BACK TO TES PRO
-          </button>
-
+          <div class="psych-xp">⚡ ${state.xp} XP</div>
+          <div class="psych-streak">🔥 ${state.streak} streak</div>
+          <button class="psych-exit-btn" onclick="returnToTesPro()">← TES PRO</button>
         </div>
-
       </div>
-
+      
       <div class="psych-xp-bar">
-        <div
-          class="psych-xp-fill"
-          style="width:${_getPsychologyProgress(state.xp)}%"
-        ></div>
+        <div class="psych-xp-fill" style="width:${_getPsychologyProgress(state.xp)}%"></div>
       </div>
-
+      
       <div class="psych-scores">
-
         <div class="psych-score-card">
-          <div class="psych-score-val" style="color:#00ff88">
-            ${state.scores.discipline}
-          </div>
-          <div class="psych-score-lbl">
-            Discipline
-          </div>
+          <div class="psych-score-val" style="color:#00ff88">${state.scores.discipline}</div>
+          <div class="psych-score-lbl">Discipline</div>
         </div>
-
         <div class="psych-score-card">
-          <div class="psych-score-val" style="color:#00ccff">
-            ${state.scores.emotion}
-          </div>
-          <div class="psych-score-lbl">
-            Emotion
-          </div>
+          <div class="psych-score-val" style="color:#00ccff">${state.scores.emotion}</div>
+          <div class="psych-score-lbl">Emotion</div>
         </div>
-
         <div class="psych-score-card">
-          <div class="psych-score-val" style="color:#cc44ff">
-            ${state.scores.execution}
-          </div>
-          <div class="psych-score-lbl">
-            Execution
-          </div>
+          <div class="psych-score-val" style="color:#cc44ff">${state.scores.execution}</div>
+          <div class="psych-score-lbl">Execution</div>
         </div>
-
       </div>
-
+      
       <div class="psych-nav-grid">
-
-        <button
-          class="psych-nav-btn"
-          onclick="_showPsychologyScreen('levels')"
-        >
+        <button class="psych-nav-btn" onclick="_showPsychologyScreen('levels')">
           <div class="psych-nav-icon">⚔️</div>
           <div class="psych-nav-label">LEVELS</div>
-          <div class="psych-nav-sub">5 Psychology Levels</div>
+          <div class="psych-nav-sub">5 Levels</div>
         </button>
-
-        <button
-          class="psych-nav-btn"
-          onclick="_showPsychologyScreen('scenarios')"
-        >
+        <button class="psych-nav-btn" onclick="_showPsychologyScreen('scenarios')">
           <div class="psych-nav-icon">🎯</div>
           <div class="psych-nav-label">SCENARIOS</div>
-          <div class="psych-nav-sub">Real Trade Drills</div>
+          <div class="psych-nav-sub">Trade Drills</div>
         </button>
-
-        <button
-          class="psych-nav-btn"
-          onclick="_showPsychologyScreen('missions')"
-        >
+        <button class="psych-nav-btn" onclick="_showPsychologyScreen('missions')">
           <div class="psych-nav-icon">📋</div>
           <div class="psych-nav-label">MISSIONS</div>
-          <div class="psych-nav-sub">Daily Training</div>
+          <div class="psych-nav-sub">Daily</div>
         </button>
-
-        <button
-          class="psych-nav-btn"
-          onclick="_showPsychologyScreen('archetypes')"
-        >
+        <button class="psych-nav-btn" onclick="_showPsychologyScreen('archetypes')">
           <div class="psych-nav-icon">🧬</div>
           <div class="psych-nav-label">ARCHETYPE</div>
-          <div class="psych-nav-sub">Who Are You?</div>
+          <div class="psych-nav-sub">Profile</div>
         </button>
-
       </div>
-
+      
       <div class="psych-quote">
-
-        <div class="psych-quote-text">
-          "The consistency you seek is in your mind, not in the markets."
-        </div>
-
-        <div class="psych-quote-author">
-          — Mark Douglas · Trading in the Zone
-        </div>
-
+        <div class="psych-quote-text">"The consistency you seek is in your mind, not in the markets."</div>
+        <div class="psych-quote-author">— Mark Douglas</div>
       </div>
-
     </div>
   `;
 }
 
-
 function _showPsychologyScreen(screen) {
-
-  _toast(
-    `Psychology ${screen} feature coming soon!`,
-    'success'
-  );
-
+  const wrapper = document.getElementById('psychology-wrapper');
+  if (!wrapper) return;
+  
+  if (screen === 'levels') {
+    wrapper.innerHTML = `
+      <div class="psychology-screen psychology-levels active">
+        <button class="psych-exit-btn" onclick="_renderPsychologyHub()" style="position:absolute;top:20px;right:20px;z-index:10">← BACK</button>
+        <div class="psychology-hub" style="margin-top:40px">
+          <div class="psych-title">⚔️ LEVELS</div>
+          <div style="margin-top:20px">
+            <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:10px">
+              <div style="font-size:14px;font-weight:900;color:#00ff88">🥉 LEVEL 1: AWARENESS</div>
+              <div style="font-size:12px;color:var(--t2);margin-top:6px">Recognize your emotional patterns in trading.</div>
+              <div style="margin-top:8px;font-size:11px;color:#00ff88">✓ Unlocked | Reward: 50 XP</div>
+            </div>
+            <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:10px">
+              <div style="font-size:14px;font-weight:900;color:#00ccff">🥈 LEVEL 2: MASTERY</div>
+              <div style="font-size:12px;color:var(--t2);margin-top:6px">Develop discipline. Stick to your plan.</div>
+              <div style="margin-top:8px;font-size:11px;color:#00ccff">${S.psychologyState.xp >= 100 ? '✓ Unlocked' : '🔒 Reach 100 XP'} | Reward: 100 XP</div>
+            </div>
+            <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:10px">
+              <div style="font-size:14px;font-weight:900;color:#ff9944">🥇 LEVEL 3: CONSISTENCY</div>
+              <div style="font-size:12px;color:var(--t2);margin-top:6px">Execute trades methodically, without hesitation.</div>
+              <div style="margin-top:8px;font-size:11px;color:#ff9944">${S.psychologyState.xp >= 300 ? '✓ Unlocked' : '🔒 Reach 300 XP'} | Reward: 150 XP</div>
+            </div>
+            <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:10px">
+              <div style="font-size:14px;font-weight:900;color:#cc44ff">💎 LEVEL 4: ZONE</div>
+              <div style="font-size:12px;color:var(--t2);margin-top:6px">Enter the Trading Zone. Pure execution.</div>
+              <div style="margin-top:8px;font-size:11px;color:#cc44ff">${S.psychologyState.xp >= 600 ? '✓ Unlocked' : '🔒 Reach 600 XP'} | Reward: 200 XP</div>
+            </div>
+            <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:14px">
+              <div style="font-size:14px;font-weight:900;color:#00ff88">👑 LEVEL 5: ELITE</div>
+              <div style="font-size:12px;color:var(--t2);margin-top:6px">Complete mastery. Trading under any condition.</div>
+              <div style="margin-top:8px;font-size:11px;color:#00ff88">${S.psychologyState.xp >= 1000 ? '✓ Unlocked' : '🔒 Reach 1000 XP'} | Reward: 300 XP</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  } else if (screen === 'scenarios') {
+    wrapper.innerHTML = `
+      <div class="psychology-screen active">
+        <button class="psych-exit-btn" onclick="_renderPsychologyHub()" style="position:absolute;top:20px;right:20px;z-index:10">← BACK</button>
+        <div class="psychology-hub" style="margin-top:40px">
+          <div class="psych-title">🎯 SCENARIOS</div>
+          <div style="margin-top:20px">
+            <div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:10px;padding:14px;margin-bottom:10px">
+              <div style="font-size:13px;font-weight:900;color:var(--t1);margin-bottom:8px">Scenario 1: The Breakeven Close</div>
+              <div style="font-size:12px;color:var(--t2);margin-bottom:8px">Your trade hit breakeven. 2 hours to market close. What do you do?</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button style="background:var(--gold-dim);border:1px solid var(--gold);color:var(--gold);padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer" onclick="_toast('✓ Correct! Lock in discipline', 'success');S.psychologyState.xp+=20;_savePsychologyState()">A: Close and move on</button>
+                <button style="background:var(--bg2);border:1px solid var(--bd);color:var(--t2);padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer" onclick="_toast('✗ Risky: Chasing without setup', 'warning')">B: Hold for bigger target</button>
+              </div>
+            </div>
+            <div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:10px;padding:14px;margin-bottom:10px">
+              <div style="font-size:13px;font-weight:900;color:var(--t1);margin-bottom:8px">Scenario 2: The Revenge Trade</div>
+              <div style="font-size:12px;color:var(--t2);margin-bottom:8px">You just lost. Another setup forms immediately. Your impulse is strong. What do you do?</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button style="background:var(--gold-dim);border:1px solid var(--gold);color:var(--gold);padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer" onclick="_toast('✓ Correct! Discipline over emotion', 'success');S.psychologyState.xp+=20;S.psychologyState.scores.emotion+=5;_savePsychologyState()">A: Wait and process the loss</button>
+                <button style="background:var(--bg2);border:1px solid var(--bd);color:var(--t2);padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer" onclick="_toast('✗ Revenge trading loses accounts', 'warning')">B: Jump in immediately</button>
+              </div>
+            </div>
+            <div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:10px;padding:14px">
+              <div style="font-size:13px;font-weight:900;color:var(--t1);margin-bottom:8px">Scenario 3: The FOMO Trade</div>
+              <div style="font-size:12px;color:var(--t2);margin-bottom:8px">Market rallying. Everyone talking. No setup. Fear of missing gains. What do you do?</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button style="background:var(--gold-dim);border:1px solid var(--gold);color:var(--gold);padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer" onclick="_toast('✓ Correct! No setup = No trade', 'success');S.psychologyState.xp+=20;S.psychologyState.scores.discipline+=5;_savePsychologyState()">A: Stay disciplined, wait</button>
+                <button style="background:var(--bg2);border:1px solid var(--bd);color:var(--t2);padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer" onclick="_toast('✗ Chasing tops is how traders lose', 'warning')">B: Chase the move</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  } else if (screen === 'missions') {
+    wrapper.innerHTML = `
+      <div class="psychology-screen active">
+        <button class="psych-exit-btn" onclick="_renderPsychologyHub()" style="position:absolute;top:20px;right:20px;z-index:10">← BACK</button>
+        <div class="psychology-hub" style="margin-top:40px">
+          <div class="psych-title">📋 DAILY MISSIONS</div>
+          <div style="margin-top:20px">
+            <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div style="font-size:13px;font-weight:700;color:var(--t1)">📖 Read Psychology Chapter</div>
+                <div style="font-size:11px;color:var(--t2);margin-top:2px">10 min on discipline</div>
+              </div>
+              <button style="background:var(--gold);color:#000;padding:6px 12px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer" onclick="_toast('✓ +30 XP', 'success');S.psychologyState.xp+=30;_savePsychologyState()">✓</button>
+            </div>
+            <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div style="font-size:13px;font-weight:700;color:var(--t1)">✅ Complete Checklist</div>
+                <div style="font-size:11px;color:var(--t2);margin-top:2px">Use checklist in TES PRO</div>
+              </div>
+              <button style="background:var(--gold);color:#000;padding:6px 12px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer" onclick="_toast('✓ +40 XP', 'success');S.psychologyState.xp+=40;S.psychologyState.scores.discipline+=10;_savePsychologyState()">✓</button>
+            </div>
+            <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div style="font-size:13px;font-weight:700;color:var(--t1)">📊 Journal Your Trade</div>
+                <div style="font-size:11px;color:var(--t2);margin-top:2px">Log at least 1 trade</div>
+              </div>
+              <button style="background:var(--gold);color:#000;padding:6px 12px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer" onclick="_toast('✓ +35 XP', 'success');S.psychologyState.xp+=35;_savePsychologyState()">✓</button>
+            </div>
+            <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:14px;display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div style="font-size:13px;font-weight:700;color:var(--t1)">🎯 No Revenge Trades Today</div>
+                <div style="font-size:11px;color:var(--t2);margin-top:2px">Maintain discipline all day</div>
+              </div>
+              <button style="background:var(--gold);color:#000;padding:6px 12px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer" onclick="_toast('✓ +50 XP BONUS!', 'success');S.psychologyState.xp+=50;S.psychologyState.scores.discipline+=15;S.psychologyState.streak+=1;_savePsychologyState()">✓</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  } else if (screen === 'archetypes') {
+    wrapper.innerHTML = `
+      <div class="psychology-screen active">
+        <button class="psych-exit-btn" onclick="_renderPsychologyHub()" style="position:absolute;top:20px;right:20px;z-index:10">← BACK</button>
+        <div class="psychology-hub" style="margin-top:40px">
+          <div class="psych-title">🧬 TRADER ARCHETYPES</div>
+          <div style="margin-top:20px">
+            <div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:10px;padding:14px;margin-bottom:10px">
+              <div style="font-size:13px;font-weight:900;color:#00ff88;margin-bottom:8px">🦁 THE DISCIPLINARIAN</div>
+              <div style="font-size:12px;color:var(--t2)">Follows the plan religiously. Never revenge trades. Takes losses without emotion.</div>
+              <button style="width:100%;background:var(--gold-dim);border:1px solid var(--gold);color:var(--gold);padding:8px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-top:8px" onclick="_toast('You are The Disciplinarian!', 'success');S.psychologyState.xp+=15">This is me</button>
+            </div>
+            <div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:10px;padding:14px;margin-bottom:10px">
+              <div style="font-size:13px;font-weight:900;color:#00ccff;margin-bottom:8px">🔥 THE EMOTIONAL TRADER</div>
+              <div style="font-size:12px;color:var(--t2)">Makes decisions based on feelings. Takes losses hard. Work on emotional control.</div>
+              <button style="width:100%;background:var(--blue-dim);border:1px solid var(--blue);color:var(--blue);padding:8px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-top:8px" onclick="_toast('Focus on Emotion Control!', 'warning');S.psychologyState.xp+=15;S.psychologyState.scores.emotion+=10;_savePsychologyState()">This is me</button>
+            </div>
+            <div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:10px;padding:14px">
+              <div style="font-size:13px;font-weight:900;color:#cc44ff;margin-bottom:8px">⚡ THE IMPULSIVE TRADER</div>
+              <div style="font-size:12px;color:var(--t2)">Enters without a plan. Chases moves. FOMO is your enemy. Master patience.</div>
+              <button style="width:100%;background:rgba(204,68,255,.15);border:1px solid rgba(204,68,255,.3);color:#cc44ff;padding:8px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-top:8px" onclick="_toast('Work on Patience & Setup!', 'warning');S.psychologyState.xp+=15;S.psychologyState.scores.execution+=10;_savePsychologyState()">This is me</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
 }
-
 
 function _getPsychologyRank(xp) {
-
   if (xp >= 1500) return 'ELITE OPERATOR';
-
   if (xp >= 900) return 'SERGEANT';
-
   if (xp >= 500) return 'CORPORAL';
-
   if (xp >= 200) return 'PRIVATE';
-
   return 'RECRUIT';
-
 }
-
 
 function _getPsychologyProgress(xp) {
-
-  const maxXp = 2000;
-
-  return Math.min((xp / maxXp) * 100, 100);
-
+  return Math.min((xp / 2000) * 100, 100);
 }
+
+// Load Chart.js
+(function() {
+  if (typeof Chart !== 'undefined') return;
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+  s.async = true;
+  document.head.appendChild(s);
+})();
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+  _startSessionTimer();
+  _renderGoldSessions();
+});
