@@ -1,0 +1,1644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <script>
+    // Wipe ALL service worker registrations and caches on every load.
+    // This prevents stale cached JS files causing duplicate-const crashes.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(regs) {
+        regs.forEach(function(r) { r.unregister(); });
+      });
+      if (window.caches) {
+        caches.keys().then(function(keys) {
+          keys.forEach(function(k) { caches.delete(k); });
+        });
+      }
+    }
+  </script>
+  <title>TES Pro — Trading Execution System</title>
+  <meta name="theme-color" content="#080c14"/>
+  <!-- apple-mobile-web-app-capable removed (deprecated) -->
+  <meta name="apple-mobile-web-app-title" content="TES Pro"/>
+
+  <!-- Firebase v8 — unchanged -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+  <!-- Theme: apply before paint to prevent flash -->
+  <script>
+    (function(){
+      var t = localStorage.getItem('tes_theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+
+  <style>
+  /* ═══════════════════════════════════════════════
+     CSS VARIABLES — Dark (default) + Light
+  ═══════════════════════════════════════════════ */
+  :root,
+  [data-theme="dark"] {
+    --bg:   #080c14;
+    --bg1:  #0c1120;
+    --bg2:  #10172a;
+    --bg3:  #141e33;
+    --bg4:  #1c2840;
+    --card: #10172a;
+    --bd:   rgba(255,255,255,.07);
+    --bd2:  rgba(255,255,255,.13);
+    --text: #eef2ff;
+    --t2:   #7a8eb0;
+    --t3:   #3a4a66;
+    --accent: #e4ae2a;
+    --gold:#e4ae2a; --gold-lt:#f5c842; --gold-dim:rgba(228,174,42,.12);
+    --green:#00d4a1; --green-dim:rgba(0,212,161,.10);
+    --red:#ff4560;  --red-dim:rgba(255,69,96,.10);
+    --blue:#3d9eff; --blue-dim:rgba(61,158,255,.10);
+    --t1:#eef2ff;
+    --topbar:52px; --nav:64px;
+  }
+
+  [data-theme="light"] {
+    --bg:   #f0f4ff;
+    --bg1:  #e6ecf8;
+    --bg2:  #ffffff;
+    --bg3:  #dce4f5;
+    --bg4:  #c8d4ec;
+    --card: #ffffff;
+    --bd:   rgba(0,0,0,.08);
+    --bd2:  rgba(0,0,0,.14);
+    --text: #0c1120;
+    --t2:   #4a5a7a;
+    --t3:   #8a9ab8;
+    --accent: #c49a1a;
+    --gold:#c49a1a; --gold-lt:#e4ae2a; --gold-dim:rgba(196,154,26,.12);
+    --green:#00a884; --green-dim:rgba(0,168,132,.10);
+    --red:#e03050;  --red-dim:rgba(224,48,80,.10);
+    --blue:#2e7fd4; --blue-dim:rgba(46,127,212,.10);
+    --t1:#0c1120;
+  }
+
+  /* ── Reset ── */
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;font-family:-apple-system,'SF Pro Display','DM Sans',system-ui,sans-serif;background:var(--bg);color:var(--t1);overflow-x:hidden;font-size:15px;transition:background .25s,color .25s}
+  button,input,select,textarea{font-family:inherit;font-size:14px}
+  ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
+
+  /* ── Screens ── */
+  #screen-splash,#screen-auth,#screen-locked,#screen-app{display:none}
+
+  /* Splash */
+  #screen-splash{align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:18px;background:var(--bg)}
+  .splash-logo{font-size:58px;font-weight:900;color:var(--gold);letter-spacing:-3px;text-shadow:0 0 40px rgba(228,174,42,.35)}
+  .splash-spinner{width:28px;height:28px;border:2.5px solid var(--bg4);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .splash-sub{font-size:12px;color:var(--t3);letter-spacing:2px;text-transform:uppercase}
+
+  /* Auth */
+  #screen-auth{align-items:center;justify-content:center;flex-direction:column;min-height:100vh;padding:32px 20px;background:var(--bg)}
+  .auth-wrap{width:100%;max-width:380px}
+  .auth-logo{font-size:50px;font-weight:900;color:var(--gold);letter-spacing:-2px;text-align:center;text-shadow:0 0 30px rgba(228,174,42,.3)}
+  .auth-tagline{text-align:center;color:var(--t2);font-size:13px;margin:6px 0 28px}
+  .auth-card{background:var(--bg2);border:1px solid var(--bd2);border-radius:18px;padding:24px}
+  .auth-tabs{display:flex;gap:4px;background:var(--bg1);border-radius:8px;padding:4px;margin-bottom:20px}
+  .atab{flex:1;padding:10px;background:transparent;border:none;border-radius:6px;font-size:13px;font-weight:600;color:var(--t2);cursor:pointer;transition:all .2s}
+  .atab.active{background:var(--gold);color:#000}
+  .auth-panel{display:none}
+  .auth-panel.active{display:block;animation:fadeUp .25s ease}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+  .field-err{display:none;font-size:12px;color:var(--red);margin-bottom:10px;line-height:1.4;padding:8px 10px;background:var(--red-dim);border-radius:6px}
+
+  /* Form elements */
+  .fg{margin-bottom:13px}
+  .fg label{display:block;font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px}
+  .fg label small{font-size:10px;font-weight:400;color:var(--t3);text-transform:none;letter-spacing:0}
+  .fg input,.fg select,.fg textarea{width:100%;background:var(--bg1);border:1px solid var(--bd);border-radius:8px;padding:11px 14px;color:var(--t1);outline:none;transition:border-color .2s;-webkit-appearance:none;appearance:none}
+  .fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--gold)}
+  .fg select option{background:var(--bg2)}
+  .fg textarea{resize:vertical;min-height:72px}
+  .fg input[type="file"]{padding:8px 10px;cursor:pointer;color:var(--t2);font-size:12px}
+  .fg input[type="file"]::-webkit-file-upload-button{background:var(--gold);color:#000;border:none;border-radius:5px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;margin-right:10px}
+
+  /* Locked */
+  #screen-locked{align-items:center;justify-content:center;flex-direction:column;min-height:100vh;padding:32px 20px;background:var(--bg);text-align:center}
+  .locked-wrap{max-width:420px;width:100%}
+  .locked-icon{font-size:52px;margin-bottom:14px}
+  .locked-h{font-size:34px;font-weight:900;letter-spacing:-1px;margin-bottom:10px}
+  .locked-sub{font-size:14px;color:var(--t2);margin-bottom:20px;line-height:1.6}
+  #locked-expiry-note{font-size:12px;color:var(--red);margin-bottom:10px;min-height:16px}
+  .locked-feats{background:var(--bg2);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:20px;text-align:left}
+  .locked-feat{font-size:13px;padding:4px 0;display:flex;align-items:center;gap:10px}
+  .locked-feat::before{content:'✓';color:var(--green);font-weight:800;flex-shrink:0}
+  .price-cards{display:flex;gap:10px;justify-content:center;margin-bottom:18px;flex-wrap:wrap}
+  .price-card{flex:1;min-width:130px;max-width:170px;background:var(--bg2);border:1px solid var(--bd2);border-radius:12px;padding:14px;text-align:center}
+  .price-amt{font-size:13px;font-weight:700;color:var(--gold);margin-bottom:2px}
+  .price-lbl{font-size:11px;color:var(--t2)}
+  .btn-paystack{width:100%;padding:14px;background:#00b8a9;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:10px}
+  .btn-paystack:hover{background:#00caba;transform:translateY(-1px)}
+  .btn-paystack.annual{background:#007e74}
+  .btn-paystack.annual:hover{background:#009a8e}
+  #locked-email{font-size:11px;color:var(--t3);margin-top:12px}
+  .btn-text-sm{background:transparent;border:none;cursor:pointer;color:var(--t2);font-size:12px;text-decoration:underline;margin-top:8px;padding:4px}
+
+  /* ── App Screen ── */
+  #screen-app{min-height:100vh;flex-direction:column}
+
+  /* Topbar */
+  .topbar{
+    position:sticky;top:0;z-index:50;height:var(--topbar);
+    background:rgba(8,12,20,.96);backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--bd);
+    display:flex;align-items:center;justify-content:space-between;padding:0 16px;
+  }
+  [data-theme="light"] .topbar{background:rgba(240,244,255,.96)}
+  .tb-logo{font-size:20px;font-weight:900;color:var(--gold);letter-spacing:-1px}
+  .tb-pro{font-size:11px;background:var(--gold);color:#000;padding:2px 6px;border-radius:3px;font-weight:800;vertical-align:middle;margin-left:3px}
+  .tb-right{display:flex;align-items:center;gap:8px}
+  #tb-email{font-size:12px;color:var(--t2);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #tb-days{font-size:11px;font-weight:600;padding:3px 8px;background:var(--green-dim);border-radius:20px;white-space:nowrap}
+  #btn-renew{display:none;font-size:11px;font-weight:700;padding:5px 10px;background:var(--gold);color:#000;border:none;border-radius:6px;cursor:pointer}
+  .tb-logout{background:transparent;border:1px solid var(--bd);color:var(--t2);font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;cursor:pointer;transition:all .2s}
+  .tb-logout:hover{border-color:var(--red);color:var(--red)}
+  /* Theme toggle */
+  .btn-theme{background:transparent;border:1px solid var(--bd);color:var(--t2);font-size:16px;padding:5px 9px;border-radius:6px;cursor:pointer;line-height:1;display:flex;align-items:center}
+
+  /* Pages */
+  .app-body{max-width:660px;margin:0 auto;padding:20px 16px;padding-bottom:calc(var(--nav) + 20px)}
+  .page{display:none;animation:fadeUp .3s ease}
+  .page.active{display:block}
+
+  /* ── SECTION LABEL ── */
+  .sec-lbl{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1.5px;margin:22px 0 10px}
+
+  /* ── CARD ── */
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:18px;margin-bottom:14px}
+  .card-title{font-size:12px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px;display:flex;align-items:center;gap:7px}
+
+  /* ═══════════════════════════════════════════════
+     HOME / DASHBOARD
+  ═══════════════════════════════════════════════ */
+
+  /* Quote card */
+  .quote-card{
+    background:var(--bg3);
+    border:1px solid var(--bd2);
+    border-radius:16px;
+    padding:16px 18px;
+    margin-bottom:14px;
+    font-size:14px;
+    line-height:1.6;
+    color:var(--t2);
+    font-style:italic;
+  }
+  .quote-card em{color:var(--gold);font-style:italic;font-weight:600}
+  .quote-author{color:var(--t3);font-size:12px;margin-top:4px;font-style:normal}
+
+  /* Streak card */
+  .streak-card{
+    background:var(--bg3);
+    border:2px solid var(--gold);
+    border-radius:16px;
+    padding:16px 20px;
+    margin-bottom:14px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  }
+  .streak-left{display:flex;align-items:center;gap:12px}
+  .streak-icon{font-size:28px}
+  .streak-num{font-size:36px;font-weight:900;color:var(--gold);line-height:1}
+  .streak-label{font-size:12px;color:var(--t2);text-transform:uppercase;letter-spacing:1px;margin-top:2px}
+  .streak-msg{font-size:13px;color:var(--t2);text-align:right;line-height:1.4;max-width:140px}
+
+  /* Stats row — 3 cards */
+  .home-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+  .home-stat-card{background:var(--bg2);border:1px solid var(--bd);border-radius:14px;padding:14px 12px;text-align:center}
+  .home-stat-val{font-size:28px;font-weight:900;color:var(--gold);letter-spacing:-1px;line-height:1}
+  .home-stat-key{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:.7px;margin-top:4px}
+
+  /* Weekly Bias summary card */
+  .bias-summary-card{background:var(--bg2);border:1px solid var(--bd);border-radius:16px;padding:16px 18px;margin-bottom:14px}
+  .bias-summary-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .bias-summary-title{font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:1px}
+  .bias-active-badge{font-size:11px;font-weight:700;color:var(--gold);background:var(--gold-dim);border:1px solid rgba(228,174,42,.3);padding:3px 10px;border-radius:20px}
+  .bias-chips{display:flex;flex-wrap:wrap;gap:8px}
+  .bias-chip{font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:1.5px solid}
+  .bias-chip.bull{color:var(--green);border-color:var(--green);background:var(--green-dim)}
+  .bias-chip.bear{color:var(--red);border-color:var(--red);background:var(--red-dim)}
+  .bias-chip.neu{color:var(--t2);border-color:var(--bd2);background:var(--bg3)}
+
+  /* Quick Access grid */
+  .quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+  .quick-btn{
+    background:var(--bg2);
+    border:1px solid var(--bd);
+    border-radius:16px;
+    padding:16px 14px;
+    display:flex;align-items:center;gap:12px;
+    cursor:pointer;
+    transition:all .2s;
+    text-align:left;
+  }
+  .quick-btn:hover{border-color:var(--bd2);transform:translateY(-1px)}
+  .quick-icon{
+    width:44px;height:44px;border-radius:12px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:20px;flex-shrink:0;
+  }
+  .quick-icon.green{background:rgba(0,212,161,.18)}
+  .quick-icon.gray{background:rgba(255,255,255,.06)}
+  .quick-icon.blue{background:rgba(61,158,255,.18)}
+  .quick-icon.purple{background:rgba(180,100,255,.18)}
+  .quick-label{font-size:15px;font-weight:700;color:var(--t1);line-height:1.2}
+  .quick-sub{font-size:11px;color:var(--t2);margin-top:2px}
+
+  /* Recent trades header */
+  .recent-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .recent-title{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1.5px}
+  .view-all-btn{font-size:13px;font-weight:600;color:var(--gold);background:transparent;border:none;cursor:pointer}
+
+  /* ── OLD stats grid (dashboard page) ── */
+  .stats-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:4px}
+  .stat-box{background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:12px 8px;text-align:center}
+  .stat-val{font-family:monospace;font-size:19px;font-weight:700;margin-bottom:3px}
+  .stat-key{font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:.5px}
+
+  /* Page header */
+  .ph{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;padding-top:6px}
+  .ph h1{font-size:26px;font-weight:900;letter-spacing:-.5px}
+  .ph-sub{font-size:12px;color:var(--t2);margin-top:3px}
+
+  /* ══════════════════════════════════════════════
+     CHECKLIST
+  ══════════════════════════════════════════════ */
+  .cl-bar-bg{height:5px;background:var(--bg4);border-radius:3px;margin-bottom:6px;overflow:hidden}
+  .cl-bar{height:100%;background:var(--gold);border-radius:3px;width:0;transition:width .4s}
+  .cl-meta{display:flex;justify-content:space-between;font-size:11px;color:var(--t2);font-weight:600;margin-bottom:16px}
+  .clg-title{font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;display:flex;align-items:center;gap:7px}
+  .clg-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+  .cl-item{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--bg2);border:1px solid var(--bd);border-radius:8px;margin-bottom:7px;cursor:pointer;user-select:none;transition:all .2s;font-size:13px;font-weight:500;color:var(--t1)}
+  .cl-item:hover{border-color:var(--bd2)}
+  .cl-item.checked{background:var(--green-dim);border-color:var(--green)}
+  .cl-box{width:19px;height:19px;border-radius:5px;border:2px solid var(--bd2);flex-shrink:0;position:relative;transition:all .2s}
+  .cl-item.checked .cl-box{background:var(--green);border-color:var(--green)}
+  .cl-item.checked .cl-box::after{display:block}
+  .cl-box::after{content:'✓';display:none;position:absolute;inset:0;text-align:center;font-size:11px;font-weight:800;color:#000;line-height:15px}
+  .cl-actions{display:flex;gap:10px;margin-top:8px}
+  .cl-actions .btn-gold{flex:1}
+
+  /* ══════════════════════════════════════════════
+     JOURNAL
+  ══════════════════════════════════════════════ */
+  .jf-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .jf-row3{grid-template-columns:1fr 1fr 1fr}
+  .rr-pill{font-family:monospace;font-size:14px;font-weight:700;color:var(--gold);background:var(--gold-dim);border:1px solid rgba(228,174,42,.2);border-radius:8px;padding:10px 13px;margin-bottom:12px}
+  .oc-row{display:flex;gap:8px;margin-top:6px}
+  .oc-btn{flex:1;padding:9px 6px;border:1px solid var(--bd);background:var(--bg1);color:var(--t2);font-size:12px;font-weight:700;border-radius:7px;cursor:pointer;transition:all .2s}
+  .oc-btn.win.active {background:var(--green-dim);border-color:var(--green);color:var(--green)}
+  .oc-btn.loss.active{background:var(--red-dim);border-color:var(--red);color:var(--red)}
+  .oc-btn.be.active  {background:var(--blue-dim);border-color:var(--blue);color:var(--blue)}
+  .jf-actions{display:flex;gap:10px;margin-top:8px}
+  .jf-actions .btn-gold{flex:1;padding:11px}
+
+  /* ══════════════════════════════════════════════
+     ANALYTICS
+  ══════════════════════════════════════════════ */
+  .an-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+  .an-card{background:var(--bg2);border:1px solid var(--bd);border-radius:12px;padding:16px}
+  .an-val{font-family:monospace;font-size:28px;font-weight:700;margin-bottom:3px}
+  .an-lbl{font-size:11px;color:var(--t2);text-transform:uppercase;letter-spacing:.5px}
+  .chart-wrap{background:var(--bg2);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:12px}
+  .chart-lbl{font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px}
+  .chart-box{position:relative;height:200px}
+
+  /* ══════════════════════════════════════════════
+     MACRO BIAS PAGE — matches screenshot exactly
+  ══════════════════════════════════════════════ */
+  .macro-page-header{padding-top:8px;margin-bottom:24px}
+  .macro-page-title{font-size:28px;font-weight:900;letter-spacing:-.5px;color:var(--t1)}
+  .macro-page-sub{font-size:13px;color:var(--t2);margin-top:4px}
+
+  /* Weekly Bias Builder card */
+  .wbb-card{
+    background:var(--bg3);
+    border:1px solid var(--bd2);
+    border-radius:20px;
+    padding:20px 18px;
+    margin-bottom:16px;
+  }
+  .wbb-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .wbb-title-row{display:flex;align-items:center;gap:10px}
+  .wbb-title{font-size:13px;font-weight:800;color:var(--t1);text-transform:uppercase;letter-spacing:.8px}
+  .wbb-sub{font-size:12px;color:var(--t2);margin-bottom:18px;margin-top:4px}
+  .btn-wbb-save{
+    background:var(--gold);
+    color:#000;
+    border:none;
+    border-radius:12px;
+    padding:10px 20px;
+    font-size:14px;
+    font-weight:800;
+    cursor:pointer;
+    transition:all .2s;
+    flex-shrink:0;
+  }
+  .btn-wbb-save:hover{background:var(--gold-lt);transform:translateY(-1px)}
+
+  /* Bias pair rows */
+  .bias-pair-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:10px;
+  }
+  .bias-pair-name{
+    font-size:14px;
+    font-weight:800;
+    color:var(--t1);
+    width:68px;
+    flex-shrink:0;
+    letter-spacing:.3px;
+  }
+  .bias-btns{display:flex;gap:8px;flex:1}
+  .bias-btn{
+    flex:1;
+    padding:11px 6px;
+    border-radius:10px;
+    font-size:12px;
+    font-weight:800;
+    letter-spacing:.5px;
+    cursor:pointer;
+    border:1.5px solid var(--bd2);
+    background:var(--bg4);
+    color:var(--t2);
+    transition:all .15s;
+  }
+  .bias-btn:hover{border-color:var(--bd2);color:var(--t1)}
+  .bias-btn.bull.active{
+    background:rgba(0,212,161,.12);
+    border-color:var(--green);
+    color:var(--green);
+  }
+  .bias-btn.bear.active{
+    background:rgba(255,69,96,.12);
+    border-color:var(--red);
+    color:var(--red);
+  }
+  .bias-btn.neu.active{
+    background:rgba(61,158,255,.12);
+    border-color:var(--blue);
+    color:var(--blue);
+  }
+
+  /* Currency Fundamentals Score card */
+  .cfs-card{
+    background:var(--bg3);
+    border:1px solid var(--bd2);
+    border-radius:20px;
+    padding:20px 18px;
+    margin-bottom:16px;
+  }
+  .cfs-header{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+  .cfs-title{font-size:13px;font-weight:800;color:var(--t1);text-transform:uppercase;letter-spacing:.8px}
+  .cfs-sub{font-size:12px;color:var(--t2);margin-bottom:18px;line-height:1.5}
+
+  /* Currency cards grid */
+  .cfs-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .cfs-currency-card{
+    background:var(--bg2);
+    border:1px solid var(--bd);
+    border-radius:14px;
+    padding:14px 12px;
+  }
+  .cfs-cname-row{display:flex;align-items:baseline;gap:8px;margin-bottom:12px}
+  .cfs-cname{font-size:22px;font-weight:900;color:var(--t1)}
+  .cfs-cfullname{font-size:11px;color:var(--t3)}
+  .cfs-field{margin-bottom:8px}
+  .cfs-field label{display:block;font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px}
+  .cfs-field select{
+    width:100%;background:var(--bg1);border:1px solid var(--bd);border-radius:8px;
+    padding:8px 10px;color:var(--t1);outline:none;font-size:12px;
+    -webkit-appearance:none;appearance:none;transition:border-color .2s;
+    cursor:pointer;
+  }
+  .cfs-field select:focus{border-color:var(--gold)}
+  .cfs-field select option{background:var(--bg2)}
+
+  /* Calculate button */
+  .btn-calc{
+    width:100%;padding:13px;
+    background:var(--gold);color:#000;
+    border:none;border-radius:12px;
+    font-size:14px;font-weight:800;
+    cursor:pointer;transition:all .2s;
+    margin-top:4px;margin-bottom:14px;
+  }
+  .btn-calc:hover{background:var(--gold-lt);transform:translateY(-1px)}
+
+  /* Results table */
+  .cs-table-wrap{overflow-x:auto;margin-top:4px}
+  .cs-table{width:100%;border-collapse:collapse;font-size:13px}
+  .cs-table th{font-size:10px;color:var(--t2);font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:7px 10px;text-align:left;border-bottom:1px solid var(--bd)}
+  .cs-table td{padding:9px 10px;border-bottom:1px solid var(--bd);color:var(--t1)}
+  .cs-table tr:last-child td{border-bottom:none}
+  .ai-pulse {
+  width: 8px; height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  animation: pulse 1s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: .4; transform: scale(1.4); }
+}
+
+  /* Trade suggestions */
+  .sugg-card{background:var(--bg2);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:14px}
+
+  /* ══════════════════════════════════════════════
+     SETTINGS PAGE
+  ══════════════════════════════════════════════ */
+  .settings-section{margin-bottom:20px}
+  .settings-section-title{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px}
+  .settings-row{
+    background:var(--bg2);
+    border:1px solid var(--bd);
+    border-radius:12px;
+    padding:14px 16px;
+    margin-bottom:8px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    cursor:pointer;
+    transition:all .2s;
+  }
+  .settings-row:hover{border-color:var(--bd2)}
+  .settings-row-left{display:flex;align-items:center;gap:12px}
+  .settings-row-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+  .settings-row-label{font-size:14px;font-weight:600;color:var(--t1)}
+  .settings-row-sub{font-size:11px;color:var(--t2);margin-top:1px}
+  .settings-row-arrow{color:var(--t3);font-size:16px}
+  .settings-danger{border-color:rgba(255,69,96,.2)}
+  .settings-danger .settings-row-label{color:var(--red)}
+
+  /* Risk Calculator */
+  .rc-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  #rc-result{padding:14px;background:var(--bg1);border:1px solid var(--bd2);border-radius:10px;margin-top:12px;font-size:13px;color:var(--t2);min-height:54px}
+
+  /* ── BUTTONS ── */
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:11px 20px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;font-family:inherit;color:var(--t1)}
+  .btn-gold{background:var(--gold);color:#000 !important}
+  .btn-gold:hover{background:var(--gold-lt);transform:translateY(-1px)}
+  .btn-ghost{background:transparent;border:1px solid var(--bd2);color:var(--t2) !important}
+  .btn-ghost:hover{border-color:var(--gold);color:var(--gold) !important}
+  .btn-danger{background:var(--red-dim);border:1px solid rgba(255,69,96,.3);color:var(--red) !important}
+  .btn-danger:hover{background:rgba(255,69,96,.2)}
+  .btn-sm{padding:8px 14px;font-size:12px}
+  .btn-full{width:100%}
+  .btn:disabled{opacity:.55;cursor:not-allowed;transform:none !important}
+  .c-gold{color:var(--gold)}.c-green{color:var(--green)}.c-red{color:var(--red)}
+
+  /* ── BOTTOM NAV ── */
+  .bottom-nav{
+    position:fixed;bottom:0;left:0;right:0;z-index:50;
+    height:var(--nav);
+    background:rgba(8,12,20,.97);
+    backdrop-filter:blur(14px);
+    border-top:1px solid var(--bd);
+    display:flex;align-items:stretch;
+    padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  [data-theme="light"] .bottom-nav{background:rgba(230,236,248,.97)}
+  .nav-btn{
+    flex:1;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:3px;
+    background:transparent;border:none;cursor:pointer;
+    color:var(--t3);font-size:9px;font-weight:700;
+    text-transform:uppercase;letter-spacing:.5px;
+    transition:color .2s;padding:6px 2px;
+  }
+  .nav-btn svg{width:20px;height:20px;stroke-width:2}
+  .nav-btn.active{color:var(--gold)}
+  .nav-btn.active svg{filter:drop-shadow(0 0 4px rgba(228,174,42,.5))}
+
+  /* ── RESPONSIVE ── */
+  @media(max-width:420px){
+    .stats-grid{grid-template-columns:repeat(3,1fr)}
+    .jf-row3{grid-template-columns:1fr 1fr}
+    .cfs-grid{grid-template-columns:1fr}
+    .rc-grid{grid-template-columns:1fr}
+    #tb-email{display:none}
+    .home-stats{gap:8px}
+    .home-stat-val{font-size:24px}
+  }
+  @media(min-width:600px){
+    .an-grid{grid-template-columns:repeat(4,1fr)}
+    .cfs-grid{grid-template-columns:repeat(4,1fr)}
+  }
+  
+  /* ════════════════════════════════════════════════════════════
+     PSYCHOLOGY BOOTCAMP — CSS
+     ════════════════════════════════════════════════════════════ */
+  #psychology-wrapper {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100;
+    background: #080c14;
+    overflow-y: auto;
+    flex-direction: column;
+  }
+  .psychology-screen { display: none; animation: fadeUp .3s ease; min-height: 100vh; }
+  .psychology-screen.active { display: block; }
+  .psychology-hub { max-width: 660px; margin: 0 auto; padding: 20px 16px; padding-bottom: 100px; }
+  .psychology-header { display: flex; justify-content: space-between; align-items: flex-start; padding: 24px 0 16px; border-bottom: 1px solid rgba(255,255,255,.07); margin-bottom: 20px; }
+  .psych-rank { font-size: 10px; color: #00ff88; letter-spacing: 3px; margin-bottom: 4px; font-weight: bold; text-transform: uppercase; }
+  .psych-title { font-size: 18px; font-weight: 900; color: #eef2ff; letter-spacing: 2px; }
+  .psych-sub { font-size: 10px; color: #5a6a8a; margin-top: 2px; letter-spacing: 1px; }
+  .psych-xp { font-size: 18px; color: #e4ae2a; font-weight: bold; text-align: right; margin-bottom: 6px; }
+  .psych-streak { font-size: 11px; color: #ff6644; margin-bottom: 12px; }
+  .psych-exit-btn { background: transparent; border: 1px solid #ff4466; color: #ff4466; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 700; transition: all .2s; letter-spacing: 1px; }
+  .psych-exit-btn:hover { background: rgba(255, 69, 96, .1); transform: translateY(-1px); }
+  .psych-xp-bar { height: 4px; background: rgba(255,255,255,.07); border-radius: 2px; overflow: hidden; margin-bottom: 6px; }
+  .psych-xp-fill { height: 100%; background: linear-gradient(90deg, #00ff88, #00ccff); transition: width .6s ease; border-radius: 2px; }
+  .psych-scores { display: flex; gap: 8px; margin-bottom: 20px; }
+  .psych-score-card { flex: 1; background: #10172a; border: 1px solid rgba(255,255,255,.07); border-radius: 8px; padding: 10px 8px; text-align: center; }
+  .psych-score-val { font-size: 22px; font-weight: 900; margin-bottom: 3px; }
+  .psych-score-lbl { font-size: 9px; color: #5a6a8a; text-transform: uppercase; letter-spacing: .7px; margin-top: 2px; }
+  .psych-nav-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+  .psych-nav-btn { background: #10172a; border: 1px solid rgba(255,255,255,.07); border-radius: 10px; padding: 14px 12px; cursor: pointer; text-align: left; transition: all .2s; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+  .psych-nav-btn:hover { border-color: rgba(255,255,255,.13); transform: translateY(-1px); }
+  .psych-nav-icon { font-size: 20px; }
+  .psych-nav-label { font-size: 13px; font-weight: 700; color: #eef2ff; letter-spacing: 1px; }
+  .psych-nav-sub { font-size: 10px; color: #5a6a8a; letter-spacing: .5px; }
+  .psych-quote { background: #141e33; border: 1px solid rgba(255,255,255,.07); border-left: 3px solid rgba(228,174,42,.5); border-radius: 8px; padding: 16px 18px; margin-bottom: 20px; }
+  .psych-quote-text { font-size: 14px; line-height: 1.6; color: #5a6a8a; font-style: italic; margin-bottom: 4px; }
+  .psych-quote-author { font-size: 12px; color: #3a4a66; font-style: normal; }
+  @media (max-width: 420px) { .psychology-header { flex-direction: column; gap: 12px; } .psych-nav-grid { grid-template-columns: 1fr; } .psych-title { font-size: 16px; } }
+  </style>
+</head>
+<body>
+
+<!-- ════════════ SPLASH ════════════ -->
+<div id="screen-splash">
+  <div class="splash-logo">TES</div>
+  <div class="splash-spinner"></div>
+  <div class="splash-sub">Loading your session…</div>
+</div>
+
+<!-- ════════════ AUTH ════════════ -->
+<div id="screen-auth">
+  <div class="auth-wrap">
+    <div class="auth-logo">TES PRO</div>
+    <div class="auth-tagline">Institutional trading discipline. Your edge.</div>
+    <div class="auth-card">
+      <div class="auth-tabs">
+        <button class="atab active" onclick="authTab('login',this)">Sign In</button>
+        <button class="atab" onclick="authTab('signup',this)">Create Account</button>
+      </div>
+      <div id="auth-login" class="auth-panel active">
+        <div class="fg"><label>Email</label><input id="l-email" type="email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')doLogin()"/></div>
+        <div class="fg"><label>Password</label><input id="l-pass" type="password" placeholder="Your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"/></div>
+        <div id="l-err" class="field-err"></div>
+        <button class="btn btn-gold btn-full" onclick="doLogin()">Sign In</button>
+      </div>
+      <div id="auth-signup" class="auth-panel">
+        <div class="fg"><label>Email</label><input id="s-email" type="email" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')doSignup()"/></div>
+        <div class="fg"><label>Password <small>(min 6 characters)</small></label><input id="s-pass" type="password" placeholder="Strong password" autocomplete="new-password" onkeydown="if(event.key==='Enter')doSignup()"/></div>
+        <div id="s-err" class="field-err"></div>
+        <button class="btn btn-gold btn-full" onclick="doSignup()">Create Account</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ LOCKED ════════════ -->
+<div id="screen-locked">
+  <div class="locked-wrap">
+    <div class="locked-icon">🔒</div>
+    <h1 class="locked-h">Unlock TES Pro</h1>
+    <p class="locked-sub">Full institutional trading system — journal, analytics, macro engine, currency strength, risk calculator and more.</p>
+    <div id="locked-expiry-note"></div>
+    <div class="locked-feats">
+      <div class="locked-feat">Pre-Trade Discipline Checklist</div>
+      <div class="locked-feat">Trade Journal with Screenshots</div>
+      <div class="locked-feat">Automatic Currency Strength Engine</div>
+      <div class="locked-feat">Auto Trade Suggestions (Top 3)</div>
+      <div class="locked-feat">Risk % Lot Size Calculator</div>
+      <div class="locked-feat">Performance Analytics</div>
+    </div>
+    <div class="price-cards">
+      <div class="price-card"><div class="price-amt" id="price-monthly">$15 / month</div><div class="price-lbl">Billed monthly</div></div>
+      <div class="price-card"><div class="price-amt" id="price-annual">$120 / year</div><div class="price-lbl">Save 33% vs monthly</div></div>
+    </div>
+    <button onclick="initiatePaystack('monthly')" style="background:#e4ae2a;color:#000;padding:10px 20px;border:none;border-radius:8px;font-weight:700;cursor:pointer;margin-bottom:12px;width:100%">🧪 TEST PAYMENT (Debug)</button>
+    <button id="btn-paystack-monthly" class="btn-paystack" onclick="initiatePaystack('monthly')"><span style="font-size:18px">💳</span> Subscribe Monthly</button>
+    <button id="btn-paystack-annual" class="btn-paystack annual" onclick="initiatePaystack('annual')"><span style="font-size:18px">💎</span> Subscribe Annually (Best Value)</button>
+    <p id="locked-email"></p><br/>
+    <button class="btn-text-sm" onclick="doLogout()">Sign out</button>
+  </div>
+</div>
+
+<!-- ════════════ MAIN APP ════════════ -->
+<div id="screen-app">
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="tb-logo">TES<span class="tb-pro">PRO</span></div>
+    <div class="tb-right">
+      <span id="tb-days" style="display:none"></span>
+      <button id="btn-renew" onclick="goPage('dashboard');setTimeout(()=>document.getElementById('cs-section').scrollIntoView(),200)">Renew</button>
+      <span id="tb-email"></span>
+      <button class="btn-theme" onclick="toggleTheme()" title="Toggle theme" id="theme-toggle-btn">🌙</button>
+      <button class="tb-logout" onclick="doLogout()">Logout</button>
+    </div>
+  </div>
+
+  <div class="app-body">
+
+    <!-- ▸ DASHBOARD / HOME ─────────────────────────────── -->
+    <div class="page active" id="page-dashboard">
+
+      <!-- Quote card -->
+      <div class="quote-card">
+        <span id="dash-quote">"Do not focus on making money; focus on <em>protecting what you have.</em>"</span>
+        <div class="quote-author" id="dash-quote-author">— Paul Tudor Jones</div>
+      </div>
+
+      <!-- Streak card -->
+      <div class="streak-card">
+        <div class="streak-left">
+          <div class="streak-icon">🔥</div>
+          <div>
+            <div class="streak-num" id="streak-num">1</div>
+            <div class="streak-label">Day Streak</div>
+          </div>
+        </div>
+        <div class="streak-msg" id="streak-msg">Complete a checklist today!</div>
+      </div>
+
+      <!-- Stats 3-card row -->
+      <div class="home-stats">
+        <div class="home-stat-card">
+          <div class="home-stat-val" id="hstat-trades">—</div>
+          <div class="home-stat-key">Trades</div>
+        </div>
+        <div class="home-stat-card">
+          <div class="home-stat-val" id="hstat-wr">—</div>
+          <div class="home-stat-key">Win Rate</div>
+        </div>
+        <div class="home-stat-card">
+          <div class="home-stat-val" id="hstat-rr">—</div>
+          <div class="home-stat-key">Avg R:R</div>
+        </div>
+      </div>
+
+      <!-- Weekly Bias summary -->
+      <div class="bias-summary-card">
+        <div class="bias-summary-header">
+          <div class="bias-summary-title">Weekly Bias</div>
+          <div class="bias-active-badge">Active</div>
+        </div>
+        <div class="bias-chips" id="dash-bias-chips">
+          <div class="bias-chip neu" style="font-size:11px;color:var(--t3);border-color:var(--bd)">Set bias in Macro Bias →</div>
+        </div>
+      </div>
+
+      <!-- Quick Access -->
+      <div class="sec-lbl">Quick Access</div>
+      <div class="quick-grid">
+        <button class="quick-btn" onclick="goPage('checklist')">
+          <div class="quick-icon green">✔️</div>
+          <div><div class="quick-label">Pre-Trade</div><div class="quick-sub">Checklist</div></div>
+        </button>
+        <button class="quick-btn" onclick="goPage('journal');setTimeout(()=>{const f=document.getElementById('trade-form-wrap');const b=document.getElementById('btn-jform');if(f&&f.style.display!=='block'){f.style.display='block';if(b)b.textContent='× Close';f.scrollIntoView({behavior:'smooth'});}},300)">
+          <div class="quick-icon gray">📓</div>
+          <div><div class="quick-label">Log Trade</div><div class="quick-sub">Journal</div></div>
+        </button>
+        <button class="quick-btn" onclick="goPage('macro')">
+          <div class="quick-icon blue">🌐</div>
+          <div><div class="quick-label">Macro Bias</div><div class="quick-sub">Fundamentals</div></div>
+        </button>
+        <button class="quick-btn" onclick="goPage('analytics')">
+          <div class="quick-icon purple">🎯</div>
+          <div><div class="quick-label">Analytics</div><div class="quick-sub">Performance</div></div>
+        </button>
+      </div>
+
+      <!-- Recent Trades -->
+      <div class="recent-header">
+        <div class="recent-title">Recent Trades</div>
+        <button class="view-all-btn" onclick="goPage('journal')">View All →</button>
+      </div>
+      <div id="home-recent-trades">
+        <p style="color:var(--t3);font-size:13px;padding:8px 0">No trades logged yet.</p>
+      </div>
+
+    </div><!-- /dashboard -->
+
+    <!-- ▸ CHECKLIST ──────────────────────────────────────── -->
+    <div class="page" id="page-checklist">
+      <div class="ph">
+        <div><h1>Pre-Trade Checklist</h1><p class="ph-sub">Complete before every single entry</p></div>
+      </div>
+      <div class="cl-bar-bg"><div class="cl-bar" id="cl-bar"></div></div>
+      <div class="cl-meta"><span id="cl-count">0/12</span><span id="cl-pct">0%</span></div>
+      <div class="card" style="padding:14px">
+        <div class="clg-title"><span class="clg-dot" style="background:var(--gold)"></span>Technical</div>
+        <div class="cl-item" data-id="trend"     onclick="clToggle(this)"><div class="cl-box"></div><span>H4 trend confirmed (HH/HL or LH/LL)</span></div>
+        <div class="cl-item" data-id="zone"      onclick="clToggle(this)"><div class="cl-box"></div><span>Valid Supply / Demand zone identified</span></div>
+        <div class="cl-item" data-id="fresh"     onclick="clToggle(this)"><div class="cl-box"></div><span>Zone is FRESH — never previously tested</span></div>
+        <div class="cl-item" data-id="impulse"   onclick="clToggle(this)"><div class="cl-box"></div><span>Strong impulse move away from zone</span></div>
+        <div class="cl-item" data-id="liquidity" onclick="clToggle(this)"><div class="cl-box"></div><span>Liquidity sweep / stop hunt confirmed</span></div>
+        <div class="cl-item" data-id="entry"     onclick="clToggle(this)"><div class="cl-box"></div><span>Entry type defined (OB / limit / confirmation)</span></div>
+      </div>
+      <div class="card" style="padding:14px">
+        <div class="clg-title"><span class="clg-dot" style="background:var(--blue)"></span>Fundamental</div>
+        <div class="cl-item" data-id="news"   onclick="clToggle(this)"><div class="cl-box"></div><span>No high-impact news within 30 minutes</span></div>
+        <div class="cl-item" data-id="rate"   onclick="clToggle(this)"><div class="cl-box"></div><span>Rate bias aligned with trade direction</span></div>
+        <div class="cl-item" data-id="cpi"    onclick="clToggle(this)"><div class="cl-box"></div><span>CPI trend supports direction</span></div>
+        <div class="cl-item" data-id="cs-chk" onclick="clToggle(this)"><div class="cl-box"></div><span>Currency strength confirms trade</span></div>
+      </div>
+      <div class="card" style="padding:14px">
+        <div class="clg-title"><span class="clg-dot" style="background:var(--green)"></span>Risk & Session</div>
+        <div class="cl-item" data-id="rr"      onclick="clToggle(this)"><div class="cl-box"></div><span>R:R is at least 1:2 before entry</span></div>
+        <div class="cl-item" data-id="session" onclick="clToggle(this)"><div class="cl-box"></div><span>Within active London / NY session window</span></div>
+      </div>
+      <div class="cl-actions">
+        <button class="btn btn-ghost btn-sm" onclick="clReset()">Reset</button>
+        <button class="btn btn-gold" onclick="clSubmit()">Proceed to Journal →</button>
+      </div>
+    </div><!-- /checklist -->
+
+    <!-- ▸ JOURNAL ─────────────────────────────────────────── -->
+    <div class="page" id="page-journal">
+      <div class="ph">
+        <div><h1>Trade Journal</h1><p class="ph-sub" id="j-subtitle">0 trades</p></div>
+        <button class="btn btn-gold btn-sm" onclick="toggleJournalForm()" id="btn-jform">+ Log Trade</button>
+      </div>
+      <div id="trade-form-wrap" style="display:none">
+        <div class="card">
+          <div class="card-title">📝 Log New Trade</div>
+          <div style="background:rgba(255,69,96,.07);border:1px solid rgba(255,69,96,.2);border-radius:8px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+            <input type="checkbox" id="j-news-check" style="width:16px;height:16px;accent-color:var(--green);cursor:pointer"/>
+            <label for="j-news-check" style="font-size:13px;font-weight:600;cursor:pointer;color:var(--t1)">✅ No high-impact news nearby (required)</label>
+          </div>
+          <div class="jf-row">
+            <div class="fg">
+              <label>Pair</label>
+              <select id="j-pair">
+                <option>XAUUSD</option><option>GBPUSD</option><option>EURUSD</option>
+                <option>USDJPY</option><option>AUDUSD</option><option>USDCAD</option>
+                <option>NZDUSD</option><option>USDCHF</option><option>GBPJPY</option>
+                <option>EURJPY</option><option>GBPCAD</option><option>AUDJPY</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="fg">
+              <label>Direction</label>
+              <select id="j-dir">
+                <option value="BUY">BUY ↑</option>
+                <option value="SELL">SELL ↓</option>
+              </select>
+            </div>
+          </div>
+          <div class="fg">
+            <label>Session</label>
+            <select id="j-session">
+              <option value="">— Select session (optional) —</option>
+              <option value="London">🇬🇧 London  (08:00–17:00 GMT)</option>
+              <option value="New York">🇺🇸 New York (13:00–22:00 GMT)</option>
+              <option value="Asian">🌏 Asian    (00:00–09:00 GMT)</option>
+            </select>
+          </div>
+          <div class="jf-row jf-row3">
+            <div class="fg"><label>Entry</label><input id="j-entry" type="number" step="0.00001" placeholder="0.00" oninput="calcRR()"/></div>
+            <div class="fg"><label>Stop Loss</label><input id="j-sl" type="number" step="0.00001" placeholder="0.00" oninput="calcRR()"/></div>
+            <div class="fg"><label>Take Profit</label><input id="j-tp" type="number" step="0.00001" placeholder="0.00" oninput="calcRR()"/></div>
+          </div>
+          <div class="rr-pill" id="j-rr">R:R — : —</div>
+          <div class="fg">
+            <label>Outcome</label>
+            <div class="oc-row">
+              <button class="oc-btn win"  onclick="setOutcome('win',this)">✅ Win</button>
+              <button class="oc-btn loss" onclick="setOutcome('loss',this)">❌ Loss</button>
+              <button class="oc-btn be"   onclick="setOutcome('be',this)">〰 BE</button>
+            </div>
+          </div>
+          <div class="fg">
+            <label>Notes</label>
+            <textarea id="j-notes" placeholder="What did you see? What went right or wrong?"></textarea>
+          </div>
+          <div class="fg">
+            <label>Screenshot <small>(optional)</small></label>
+            <input id="j-image" type="file" accept="image/*" capture="environment"/>
+            <div class="img-hint" style="font-size:11px;color:var(--t3);margin-top:4px">JPG / PNG — recommend under 1 MB</div>
+          </div>
+          <div class="jf-actions">
+            <button class="btn btn-ghost" onclick="hideTradeForm()">Cancel</button>
+            <button class="btn btn-gold" onclick="submitTrade()">Save Trade</button>
+          </div>
+        </div>
+      </div>
+      <div id="trade-list"><p style="color:var(--t3);font-size:13px;padding:16px 0">No trades logged yet.</p></div>
+    </div><!-- /journal -->
+
+    <!-- ▸ ANALYTICS ──────────────────────────────────────── -->
+    <div class="page" id="page-analytics">
+      <div class="ph"><div><h1>Performance</h1><p class="ph-sub">Your trading analytics</p></div></div>
+      <div class="an-grid">
+        <div class="an-card"><div class="an-val c-green" id="an-wins">0</div><div class="an-lbl">Wins</div></div>
+        <div class="an-card"><div class="an-val c-red" id="an-losses">0</div><div class="an-lbl">Losses</div></div>
+        <div class="an-card"><div class="an-val c-gold" id="an-rr">0.0</div><div class="an-lbl">Avg R:R</div></div>
+        <div class="an-card"><div class="an-val" id="an-wr">0%</div><div class="an-lbl">Win Rate</div></div>
+      </div>
+      <div class="chart-wrap">
+        <div class="chart-lbl">Equity Curve (R multiples)</div>
+        <div class="chart-box"><canvas id="eq-chart"></canvas></div>
+      </div>
+      <div class="chart-wrap">
+        <div class="chart-lbl">Win / Loss / BE Distribution</div>
+        <div class="chart-box" style="height:190px"><canvas id="dist-chart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Session Breakdown</div>
+        <div id="session-stats" style="font-size:13px;color:var(--t2)">Log trades with sessions selected to see breakdown.</div>
+      </div>
+    </div><!-- /analytics -->
+
+    <!-- ▸ MACRO BIAS ───────────────────────────────────────── -->
+    <div class="page" id="page-macro">
+
+      <div class="macro-page-header">
+        <div class="macro-page-title">Macro Bias Engine</div>
+        <div class="macro-page-sub">Fundamental analysis &amp; currency strength</div>
+      </div>
+
+      <!-- Weekly Bias Builder -->
+      <div class="wbb-card">
+        <div class="wbb-header">
+          <div class="wbb-title-row">
+            <span style="font-size:20px">📅</span>
+            <span class="wbb-title">Weekly Bias Builder</span>
+          </div>
+          <button class="btn-wbb-save" onclick="saveWeeklyBias()">Save</button>
+        </div>
+        <div class="wbb-sub">Set once per week. Used across all trades and checklist.</div>
+
+        <!-- Pair rows built by JS -->
+        <div id="wbb-pairs-wrap"></div>
+      </div>
+
+      <!-- Currency Fundamentals Score -->
+      <div class="cfs-card">
+        <div class="cfs-header">
+          <span style="font-size:20px">⚙️</span>
+          <span class="cfs-title">Currency Fundamentals Score</span>
+        </div>
+        <div class="cfs-sub">Rate each factor for each currency to calculate bias strength.</div>
+
+        <!-- Global risk sentiment -->
+        <div class="fg" style="margin-bottom:16px">
+          <label>Global Risk Sentiment</label>
+          <select id="cs-global-risk">
+            <option value="">— Select —</option>
+            <option value="risk-on">Risk-On (AUD/NZD/CAD rally)</option>
+            <option value="risk-off">Risk-Off (JPY/CHF/USD rally)</option>
+          </select>
+        </div>
+
+        <!-- Currency input cards -->
+        <div class="cfs-grid" id="cs-inputs-wrap"></div>
+
+        <!-- [SESSION 2] Two-button row -->
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn-calc" onclick="runCurrencyAnalysis()" style="flex:1;min-width:140px">⚡ Calculate Strength</button>
+          <button class="btn-calc" onclick="fetchAndInjectMacroData()"
+            style="flex:1;min-width:140px;background:var(--bg3);border:1px solid var(--bd2);color:var(--gold)">
+            🌐 Load Live Data
+          </button>
+        </div>
+
+        <!-- Results -->
+        <div id="cs-results-wrap" style="display:none">
+          <div style="font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px">Rankings</div>
+          <div class="cs-table-wrap">
+            <table class="cs-table">
+              <thead><tr>
+                <th>#</th><th>Currency</th><th>Score</th><th>Bias</th>
+              </tr></thead>
+              <tbody id="cs-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- AI Bias Summary box -->
+        <div id="ai-summary-box" style="
+          background:var(--card);
+          border:1px solid var(--bd);
+          border-radius:12px;
+          padding:16px;
+          margin-top:14px;
+          min-height:60px;
+          color:var(--t2);
+          font-size:13px">
+          <span style="color:#5a6a8a">Run analysis to generate AI bias summary.</span>
+        </div>
+
+        <!-- [SESSION 2 - TASK 3] News Headlines Panel -->
+        <div style="background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-top:14px">
+          <div style="font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px">
+            📰 Market News
+          </div>
+          <div id="news-panel">
+            <p style="color:var(--t2);font-size:13px">News loads automatically when you enter the app.</p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Auto Trade Suggestions -->
+      <div class="cfs-card" style="margin-bottom:16px">
+        <div class="cfs-header" style="margin-bottom:4px">
+          <span style="font-size:20px">🚀</span>
+          <span class="cfs-title">Top 3 Trade Setups</span>
+        </div>
+        <div class="cfs-sub">Strongest vs weakest pairs. Run analysis above first.</div>
+        <div id="sugg-list">
+          <p style="color:var(--t3);font-size:13px">Run currency analysis above to generate trade ideas.</p>
+        </div>
+      </div>
+
+    </div><!-- /macro -->
+
+    <!-- ▸ GOLD DESK ────────────────────────────────────────── -->
+    <div class="page" id="page-gold">
+      <div style="padding-top:8px;margin-bottom:24px">
+        <div style="font-size:26px;font-weight:900;letter-spacing:-.5px;color:var(--gold)">⭐ TES Gold Desk</div>
+        <div style="font-size:13px;color:var(--t2);margin-top:4px">XAUUSD institutional bias engine</div>
+      </div>
+
+      <!-- XAUUSD Bias Engine -->
+      <div style="background:var(--card);border:1px solid rgba(228,174,42,.18);border-radius:16px;padding:20px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+          <span style="font-size:20px">⚡</span>
+          <span style="font-size:14px;font-weight:800;color:var(--t1);text-transform:uppercase;letter-spacing:.6px">XAUUSD Bias Engine</span>
+        </div>
+        <div style="font-size:12px;color:var(--t2);margin-bottom:16px">Macro-driven directional bias for gold</div>
+        
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+          <div>
+            <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">USD Strength</div>
+            <select id="gd-usd-strength" style="width:100%;padding:11px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;color:var(--t1);font-size:13px;-webkit-appearance:none">
+              <option value="">Select...</option>
+              <option value="strong">Strong</option>
+              <option value="neutral">Neutral</option>
+              <option value="weak">Weak</option>
+            </select>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Bond Yields</div>
+            <select id="gd-yields" style="width:100%;padding:11px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;color:var(--t1);font-size:13px;-webkit-appearance:none">
+              <option value="">Select...</option>
+              <option value="rising">Rising</option>
+              <option value="flat">Flat</option>
+              <option value="falling">Falling</option>
+            </select>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Fed Stance</div>
+            <select id="gd-fed" style="width:100%;padding:11px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;color:var(--t1);font-size:13px;-webkit-appearance:none">
+              <option value="">Select...</option>
+              <option value="hawkish">Hawkish</option>
+              <option value="neutral">Neutral</option>
+              <option value="dovish">Dovish</option>
+            </select>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Risk Sentiment</div>
+            <select id="gd-risk" style="width:100%;padding:11px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;color:var(--t1);font-size:13px;-webkit-appearance:none">
+              <option value="">Select...</option>
+              <option value="risk-on">Risk-On</option>
+              <option value="neutral">Neutral</option>
+              <option value="risk-off">Risk-Off</option>
+            </select>
+          </div>
+        </div>
+        
+        <div style="margin-bottom:12px">
+          <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Inflation Expectations</div>
+          <select id="gd-inflation" style="width:100%;padding:11px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;color:var(--t1);font-size:13px;-webkit-appearance:none">
+            <option value="">Select...</option>
+            <option value="rising">Rising (above 2% target)</option>
+            <option value="stable">Stable (near 2%)</option>
+            <option value="falling">Falling (below 2%)</option>
+          </select>
+        </div>
+        
+        <button onclick="runGoldBiasEngine()" style="width:100%;padding:13px;background:var(--gold);color:#000;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;letter-spacing:.3px">⚡ Generate Gold Bias</button>
+        <div id="gd-bias-result" style="display:none;margin-top:16px"></div>
+      </div>
+
+      <!-- Why Gold Moved -->
+      <div style="background:var(--card);border:1px solid rgba(228,174,42,.18);border-radius:16px;padding:20px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+          <span style="font-size:20px">📌</span>
+          <span style="font-size:14px;font-weight:800;color:var(--t1);text-transform:uppercase;letter-spacing:.6px">Why Gold Moved Today</span>
+        </div>
+        <div style="font-size:12px;color:var(--t2);margin-bottom:16px">Macro narrative for today's price action</div>
+        
+        <div style="margin-bottom:10px">
+          <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Gold Direction Today</div>
+          <select id="gd-moved-direction" style="width:100%;padding:11px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;color:var(--t1);font-size:13px;-webkit-appearance:none">
+            <option value="">Select...</option>
+            <option value="rallied">Gold Rallied</option>
+            <option value="sold-off">Gold Sold Off</option>
+            <option value="ranging">Gold Ranging</option>
+          </select>
+        </div>
+        
+        <div style="margin-bottom:10px">
+          <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Key Driver</div>
+          <select id="gd-moved-driver" style="width:100%;padding:11px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;color:var(--t1);font-size:13px;-webkit-appearance:none">
+            <option value="">Select...</option>
+            <option value="cpi">CPI Data</option>
+            <option value="nfp">NFP / Jobs Data</option>
+            <option value="fomc">FOMC / Fed Statement</option>
+            <option value="geopolitical">Geopolitical Risk</option>
+            <option value="yields">Bond Yield Move</option>
+            <option value="usd">USD Strength</option>
+          </select>
+        </div>
+        
+        <button onclick="runWhyGoldMoved()" style="width:100%;padding:13px;background:var(--gold);color:#000;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;letter-spacing:.3px;margin-bottom:14px">📌 Explain Gold Move</button>
+        <div id="gd-moved-result" style="display:none"></div>
+      </div>
+
+      <!-- Gold News Interpreter -->
+      <div style="background:var(--card);border:1px solid rgba(228,174,42,.18);border-radius:16px;padding:20px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+          <span style="font-size:20px">📰</span>
+          <span style="font-size:14px;font-weight:800;color:var(--t1);text-transform:uppercase;letter-spacing:.6px">Gold News Interpreter</span>
+        </div>
+        <div style="font-size:12px;color:var(--t2);margin-bottom:16px">Select a news event to get gold's expected reaction</div>
+        
+        <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">News Event</div>
+        <select id="gd-news-event" style="width:100%;padding:11px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;color:var(--t1);font-size:13px;margin-bottom:10px;-webkit-appearance:none">
+          <option value="">Select event...</option>
+          <option value="cpi">CPI (Inflation Report)</option>
+          <option value="nfp">NFP (Non-Farm Payrolls)</option>
+          <option value="fomc">FOMC Rate Decision</option>
+          <option value="employment">Employment Change</option>
+          <option value="gdp">GDP Report</option>
+        </select>
+        
+        <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Outcome vs Forecast</div>
+        <select id="gd-news-outcome" style="width:100%;padding:11px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;color:var(--t1);font-size:13px;margin-bottom:14px;-webkit-appearance:none">
+          <option value="">Select outcome...</option>
+          <option value="better">Better than expected</option>
+          <option value="worse">Worse than expected</option>
+          <option value="inline">Inline with forecast</option>
+          <option value="hike">Rate Hike</option>
+          <option value="cut">Rate Cut</option>
+          <option value="hold">Hold (no change)</option>
+        </select>
+        
+        <button onclick="runGoldNewsInterpreter()" style="width:100%;padding:13px;background:var(--gold);color:#000;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;letter-spacing:.3px">⚡ Interpret News Impact on Gold</button>
+        <div id="gd-news-result" style="margin-top:14px;padding:16px;background:var(--bg2);border:1px solid var(--bd);border-radius:12px;display:none"></div>
+      </div>
+
+      <!-- Gold Sessions -->
+      <div style="background:var(--card);border:1px solid rgba(228,174,42,.18);border-radius:16px;padding:20px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+          <span style="font-size:20px">⏰</span>
+          <span style="font-size:14px;font-weight:800;color:var(--t1);text-transform:uppercase;letter-spacing:.6px">Gold Session Volatility</span>
+        </div>
+        <div style="font-size:12px;color:var(--t2);margin-bottom:16px">Best windows to trade XAUUSD</div>
+        <div id="gd-sessions-wrap"></div>
+        <div id="gd-session-advice" style="margin-top:10px;font-size:12px;color:var(--t2);text-align:center"></div>
+      </div>
+    </div><!-- /gold -->
+
+    <!-- ▸ SETTINGS ──────────────────────────────────────── -->
+    <div class="page" id="page-settings">
+      <div class="ph"><div><h1>Settings</h1><p class="ph-sub">App preferences &amp; data</p></div></div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Appearance</div>
+        <div class="settings-row" onclick="toggleTheme()">
+          <div class="settings-row-left">
+            <div class="settings-row-icon" style="background:rgba(228,174,42,.15)">🌗</div>
+            <div><div class="settings-row-label" id="theme-label">Dark Mode</div><div class="settings-row-sub">Tap to switch theme</div></div>
+          </div>
+          <div class="settings-row-arrow">›</div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Export Data</div>
+        <div class="settings-row" onclick="exportCSV()">
+          <div class="settings-row-left">
+            <div class="settings-row-icon" style="background:rgba(0,212,161,.15)">📊</div>
+            <div><div class="settings-row-label">Export CSV</div><div class="settings-row-sub">All trades as spreadsheet</div></div>
+          </div>
+          <div class="settings-row-arrow">›</div>
+        </div>
+        <div class="settings-row" onclick="exportJSON()">
+          <div class="settings-row-left">
+            <div class="settings-row-icon" style="background:rgba(61,158,255,.15)">🗂</div>
+            <div><div class="settings-row-label">Export JSON</div><div class="settings-row-sub">Full data backup</div></div>
+          </div>
+          <div class="settings-row-arrow">›</div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Account</div>
+        <div class="settings-row" onclick="doLogout()">
+          <div class="settings-row-left">
+            <div class="settings-row-icon" style="background:rgba(255,255,255,.06)">🚪</div>
+            <div><div class="settings-row-label">Sign Out</div><div class="settings-row-sub" id="settings-email"></div></div>
+          </div>
+          <div class="settings-row-arrow">›</div>
+        </div>
+        <div class="settings-row settings-danger" onclick="confirmDeleteAll()">
+          <div class="settings-row-left">
+            <div class="settings-row-icon" style="background:var(--red-dim)">🗑</div>
+            <div><div class="settings-row-label">Delete All Trades</div><div class="settings-row-sub">Permanent — cannot be undone</div></div>
+          </div>
+          <div class="settings-row-arrow" style="color:var(--red)">›</div>
+        </div>
+      </div>
+
+    </div><!-- /settings -->
+
+  </div><!-- /app-body -->
+
+  <!-- ════════════════ PSYCHOLOGY BOOTCAMP ════════════════ -->
+  <div id="psychology-wrapper" style="display:none">
+    <!-- Psychology screens render here -->
+  </div>
+
+  <!-- Bottom nav (5 items to match screenshot) -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-page="dashboard" onclick="goPage('dashboard')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Home
+    </button>
+    <button class="nav-btn" data-page="checklist" onclick="goPage('checklist')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Checklist
+    </button>
+    <button class="nav-btn" data-page="journal" onclick="goPage('journal')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>Journal
+    </button>
+    <button class="nav-btn" data-page="analytics" onclick="goPage('analytics')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Analytics
+    </button>
+    <button class="nav-btn" data-page="macro" onclick="goPage('macro')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/></svg>Macro
+    </button>
+    <button class="nav-btn" data-page="gold" onclick="goPage('gold')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 15 9 22 9 16 14 19 22 12 17 5 22 8 14 2 9 9 9 12 2"/></svg>Gold
+    </button>
+    <button class="nav-btn" data-page="settings" onclick="goPage('settings')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Settings
+    </button>
+  </nav>
+
+  <!-- [SESSION 2 - TASK 3] Breaking-news overlay — auto-dismisses after 6s -->
+  <div id="breaking-alert" style="
+    display:none;
+    position:fixed;
+    top:70px;
+    right:16px;
+    z-index:9998;
+    max-width:300px;
+    background:#0c1120;
+    border:1.5px solid var(--gold);
+    border-radius:12px;
+    padding:13px 16px;
+    font-size:13px;
+    font-weight:700;
+    color:var(--gold);
+    line-height:1.5;
+    box-shadow:0 6px 30px rgba(0,0,0,.6);
+    pointer-events:none">
+  </div>
+
+</div><!-- /screen-app -->
+
+
+<!-- ════════════════ SCRIPTS ════════════════ -->
+<script src="firebase.js"></script>
+<script src="app.js"></script>
+
+<script>
+/* ══════════════════════════════════════════════
+   INLINE UI — helpers that don't belong in app.js
+══════════════════════════════════════════════ */
+
+// ── Theme toggle ─────────────────────────────
+function toggleTheme() {
+  const cur  = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('tes_theme', next);
+  _updateThemeIcons(next);
+}
+function _updateThemeIcons(t) {
+  const btn  = document.getElementById('theme-toggle-btn');
+  const lbl  = document.getElementById('theme-label');
+  if (btn) btn.textContent = t === 'dark' ? '🌙' : '☀️';
+  if (lbl) lbl.textContent = t === 'dark' ? 'Dark Mode' : 'Light Mode';
+}
+// Apply on load
+_updateThemeIcons(localStorage.getItem('tes_theme') || 'dark');
+
+// ── Auth tab ─────────────────────────────────
+function authTab(tab, btn) {
+  document.querySelectorAll('.atab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.auth-panel').forEach(p => p.classList.remove('active'));
+  const panel = document.getElementById('auth-' + tab);
+  if (panel) panel.classList.add('active');
+  ['l-err','s-err'].forEach(id => {
+    const e = document.getElementById(id);
+    if (e) { e.textContent = ''; e.style.display = 'none'; }
+  });
+}
+
+// ── Page navigation ──────────────────────────
+function goPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(n => n.classList.remove('active'));
+  const pg  = document.getElementById('page-' + id);
+  const nav = document.querySelector('.nav-btn[data-page="' + id + '"]');
+  if (pg)  pg.classList.add('active');
+  if (nav) nav.classList.add('active');
+  if (id === 'analytics') renderAnalyticsPage();
+  if (id === 'journal')   updateJournalSubtitle();
+  if (id === 'settings')  _setupSettingsPage();
+  if (id === 'dashboard') _refreshDashboard();
+  window.scrollTo(0, 0);
+}
+
+function _setupSettingsPage() {
+  const el = document.getElementById('settings-email');
+  if (el && typeof S !== 'undefined') el.textContent = S.user?.email || '';
+}
+
+function _refreshDashboard() {
+  if (typeof S === 'undefined') return;
+  const t    = S.trades || [];
+  const wins = t.filter(x => x.outcome === 'win').length;
+  const wr   = t.length ? Math.round(wins / t.length * 100) : null;
+  const avgRR= t.length
+    ? (t.reduce((a,x) => a + (parseFloat(x.rr)||0),0) / t.length).toFixed(1)
+    : null;
+
+  const set = (id,v) => { const e=document.getElementById(id); if(e) e.textContent=v; };
+  set('hstat-trades', t.length || '—');
+  set('hstat-wr',     wr !== null ? wr + '%' : '—');
+  set('hstat-rr',     avgRR || '—');
+
+  // Recent trades — last 3
+  const recentEl = document.getElementById('home-recent-trades');
+  if (recentEl) {
+    if (!t.length) {
+      recentEl.innerHTML = '<p style="color:var(--t3);font-size:13px;padding:8px 0">No trades logged yet.</p>';
+    } else {
+      recentEl.innerHTML = t.slice(0,3).map(tr => {
+        const d   = tr.createdAt?.toDate ? tr.createdAt.toDate() : new Date();
+        const ds  = d.toLocaleDateString('en-GB',{day:'numeric',month:'short'}) + ' ' + d.toTimeString().slice(0,5);
+        const col = tr.outcome === 'win' ? 'var(--green)' : tr.outcome === 'loss' ? 'var(--red)' : 'var(--blue)';
+        const dir = tr.direction === 'BUY'
+          ? '<span style="color:var(--red);font-weight:700;font-size:12px">↓ SELL</span>'
+          : '<span style="color:var(--red);font-weight:700;font-size:12px">↓ SELL</span>';
+        const dirLabel = tr.direction === 'BUY'
+          ? '<span style="color:var(--green);font-weight:700;font-size:12px">↑ BUY</span>'
+          : '<span style="color:var(--red);font-weight:700;font-size:12px">↓ SELL</span>';
+        const oc  = (tr.outcome||'be').toUpperCase();
+        return `<div style="background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:18px;font-weight:900;letter-spacing:-.5px;color:var(--t1)">${tr.pair||'—'}</span>
+              ${dirLabel}
+            </div>
+            <span style="font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;background:${col}20;color:${col};border:1px solid ${col}40">${oc}</span>
+          </div>
+          <div style="display:flex;gap:14px;font-size:11px;color:var(--t2)">
+            <span>📅 ${ds}</span>
+            <span style="color:var(--gold);font-weight:700">R:R 1:${tr.rr||'—'}</span>
+            ${tr.entry ? '<span>Entry: '+tr.entry+'</span>' : ''}
+          </div>
+          ${tr.notes ? '<div style="font-size:12px;color:var(--t2);margin-top:8px;line-height:1.5;border-top:1px solid var(--bd);padding-top:8px">'+tr.notes.slice(0,120)+'</div>' : ''}
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // Weekly bias chips
+  _renderDashBiasChips();
+}
+
+function _renderDashBiasChips() {
+  const el = document.getElementById('dash-bias-chips');
+  if (!el) return;
+  let biases = {};
+  try {
+    const uid = (typeof S !== 'undefined') ? S.user?.uid : null;
+    if (uid) biases = JSON.parse(localStorage.getItem('tes_wbb_' + uid) || '{}');
+  } catch {}
+  const pairs = Object.keys(biases);
+  if (!pairs.length) {
+    el.innerHTML = '<div class="bias-chip neu" style="font-size:11px;color:var(--t3);border-color:var(--bd)">Set bias in Macro Bias →</div>';
+    return;
+  }
+  el.innerHTML = pairs.filter(p => biases[p] && biases[p] !== 'none').map(p => {
+    const b = biases[p];
+    const cls = b === 'bull' ? 'bull' : b === 'bear' ? 'bear' : 'neu';
+    return `<div class="bias-chip ${cls}">${p}: ${b.toUpperCase()}</div>`;
+  }).join('');
+}
+
+// ── Journal helpers ───────────────────────────
+function toggleJournalForm() {
+  const form = document.getElementById('trade-form-wrap');
+  const btn  = document.getElementById('btn-jform');
+  if (!form) return;
+  const open = form.style.display === 'block';
+  form.style.display = open ? 'none' : 'block';
+  if (btn) btn.textContent = open ? '+ Log Trade' : '× Close';
+  if (!open) form.scrollIntoView({ behavior: 'smooth' });
+}
+function updateJournalSubtitle() {
+  const el = document.getElementById('j-subtitle');
+  if (el && typeof S !== 'undefined') {
+    el.textContent = S.trades.length + ' trade' + (S.trades.length !== 1 ? 's' : '');
+  }
+}
+
+// ── Checklist ────────────────────────────────
+function clToggle(item) {
+  item.classList.toggle('checked');
+  const total   = document.querySelectorAll('.cl-item').length;
+  const checked = document.querySelectorAll('.cl-item.checked').length;
+  const pct     = total ? Math.round(checked / total * 100) : 0;
+  const bar = document.getElementById('cl-bar'); if (bar) bar.style.width = pct + '%';
+  const cnt = document.getElementById('cl-count'); if (cnt) cnt.textContent = checked + '/' + total;
+  const pEl = document.getElementById('cl-pct');   if (pEl) pEl.textContent = pct + '%';
+}
+function clReset() {
+  document.querySelectorAll('.cl-item').forEach(i => i.classList.remove('checked'));
+  const bar = document.getElementById('cl-bar'); if (bar) bar.style.width = '0%';
+  const cnt = document.getElementById('cl-count'); if (cnt) cnt.textContent = '0/12';
+  const pEl = document.getElementById('cl-pct');   if (pEl) pEl.textContent = '0%';
+}
+function clSubmit() {
+  const total   = document.querySelectorAll('.cl-item').length;
+  const checked = document.querySelectorAll('.cl-item.checked').length;
+  if (checked < 8) {
+    if (typeof _toast === 'function') _toast('Complete at least 8 checks (' + checked + '/' + total + ' done)', 'warning');
+    return;
+  }
+  if (typeof _toast === 'function') _toast('Checklist passed ' + Math.round(checked/total*100) + '% — log your trade!', 'success');
+  goPage('journal');
+  setTimeout(() => {
+    const form = document.getElementById('trade-form-wrap');
+    const btn  = document.getElementById('btn-jform');
+    if (form && form.style.display !== 'block') {
+      form.style.display = 'block';
+      if (btn) btn.textContent = '× Close';
+      form.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, 350);
+}
+
+// ── Analytics ────────────────────────────────
+let _eqChart = null, _distChart = null;
+function renderAnalyticsPage() {
+  const trades  = (typeof S !== 'undefined') ? S.trades : [];
+  const wins    = trades.filter(t => t.outcome === 'win').length;
+  const losses  = trades.filter(t => t.outcome === 'loss').length;
+  const bes     = trades.filter(t => t.outcome === 'be').length;
+  const wr      = trades.length ? Math.round(wins / trades.length * 100) : 0;
+  const avgRR   = trades.length
+    ? (trades.reduce((a, t) => a + (parseFloat(t.rr) || 0), 0) / trades.length).toFixed(2)
+    : '0.00';
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('an-wins', wins); set('an-losses', losses); set('an-rr', avgRR); set('an-wr', wr + '%');
+
+  if (typeof Chart === 'undefined') return;
+
+  const cv1 = document.getElementById('eq-chart');
+  if (cv1) {
+    if (_eqChart) _eqChart.destroy();
+    let eq = 0; const eqD = [0], eqL = ['Start'];
+    [...trades].reverse().forEach((t, i) => {
+      eq += t.outcome === 'win' ? parseFloat(t.rr || 1) : t.outcome === 'loss' ? -1 : 0;
+      eqD.push(parseFloat(eq.toFixed(2)));
+      eqL.push('T' + (i + 1));
+    });
+    const ctx = cv1.getContext('2d');
+    const g   = ctx.createLinearGradient(0, 0, 0, 180);
+    g.addColorStop(0, 'rgba(228,174,42,.28)');
+    g.addColorStop(1, 'rgba(228,174,42,0)');
+    _eqChart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: eqL, datasets: [{ data: eqD, borderColor: '#e4ae2a', backgroundColor: g, fill: true, tension: .4, pointRadius: 3, pointBackgroundColor: '#e4ae2a' }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+        scales: { x: { ticks: { color: '#5a6a8a', font: { size: 10 } }, grid: { color: '#1c2840' } },
+                  y: { ticks: { color: '#5a6a8a', font: { size: 10 } }, grid: { color: '#1c2840' } } } }
+    });
+  }
+  const cv2 = document.getElementById('dist-chart');
+  if (cv2) {
+    if (_distChart) _distChart.destroy();
+    _distChart = new Chart(cv2.getContext('2d'), {
+      type: 'doughnut',
+      data: { labels: ['Wins','Losses','BE'], datasets: [{ data: [wins||0,losses||0,bes||0], backgroundColor: ['#00d4a1','#ff4560','#3d9eff'], borderWidth: 0, hoverOffset: 4 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#7a8eb0', font: { size: 11 } } } } }
+    });
+  }
+  const sessEl = document.getElementById('session-stats');
+  if (sessEl) {
+    const map = {};
+    trades.forEach(t => {
+      if (!t.session) return;
+      if (!map[t.session]) map[t.session] = { wins: 0, total: 0 };
+      map[t.session].total++;
+      if (t.outcome === 'win') map[t.session].wins++;
+    });
+    const rows = Object.entries(map);
+    if (!rows.length) { sessEl.textContent = 'Log trades with sessions selected to see breakdown.'; return; }
+    sessEl.innerHTML = rows.map(([s, d]) => {
+      const wr = Math.round(d.wins / d.total * 100);
+      return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd)">
+        <span style="font-weight:600">${s}</span>
+        <span style="color:${wr >= 50 ? 'var(--green)' : 'var(--red)'}">${d.wins}/${d.total} — ${wr}% WR</span>
+      </div>`;
+    }).join('');
+  }
+}
+
+// ── Weekly Bias Builder (Macro page) ─────────
+const WBB_PAIRS = ['XAUUSD','GBPUSD','EURUSD','USDJPY','AUDUSD','USDCAD','NZDUSD','USDCHF'];
+
+(function buildBiasPairs() {
+  const wrap = document.getElementById('wbb-pairs-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = WBB_PAIRS.map(p => `
+    <div class="bias-pair-row">
+      <div class="bias-pair-name">${p}</div>
+      <div class="bias-btns">
+        <button class="bias-btn bull" data-pair="${p}" data-val="bull" onclick="setBias('${p}','bull',this)">BULL</button>
+        <button class="bias-btn bear" data-pair="${p}" data-val="bear" onclick="setBias('${p}','bear',this)">BEAR</button>
+        <button class="bias-btn neu"  data-pair="${p}" data-val="neu"  onclick="setBias('${p}','neu',this)">NEU</button>
+      </div>
+    </div>`).join('');
+  // restore saved biases
+  _restoreWeeklyBias();
+})();
+
+var _wbbState = {};
+
+function setBias(pair, val, btn) {
+  // deactivate siblings
+  const row = btn.closest('.bias-pair-row');
+  if (row) row.querySelectorAll('.bias-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  _wbbState[pair] = val;
+}
+
+function saveWeeklyBias() {
+  if (typeof S === 'undefined' || !S.user) return;
+  localStorage.setItem('tes_wbb_' + S.user.uid, JSON.stringify(_wbbState));
+  if (typeof _toast === 'function') _toast('Weekly bias saved ✓', 'success');
+  _renderDashBiasChips();
+}
+
+function _restoreWeeklyBias() {
+  if (typeof S === 'undefined' || !S.user) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem('tes_wbb_' + S.user.uid) || '{}');
+    _wbbState = saved;
+    Object.entries(saved).forEach(([pair, val]) => {
+      const btn = document.querySelector(`.bias-btn[data-pair="${pair}"][data-val="${val}"]`);
+      if (btn) {
+        const row = btn.closest('.bias-pair-row');
+        if (row) row.querySelectorAll('.bias-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      }
+    });
+  } catch {}
+}
+
+// ── Currency inputs (Macro page) ─────────────
+(function buildCurrencyInputs() {
+  const wrap       = document.getElementById('cs-inputs-wrap');
+   const currencies = [
+    ['USD','US Dollar'],['EUR','Euro'],['GBP','Pound'],['JPY','Yen'],
+    ['AUD','Aussie'],['NZD','Kiwi'],['CAD','Loonie'],['CHF','Swiss Franc'],
+    ['XAU','Gold']
+  ];
+  if (!wrap) return;
+  wrap.innerHTML = currencies.map(([c, full]) => `
+    <div class="cfs-currency-card">
+      <div class="cfs-cname-row">
+        <div class="cfs-cname">${c}</div>
+        <div class="cfs-cfullname">${full}</div>
+      </div>
+      <div class="cfs-field">
+        <label>Rate</label>
+        <select id="cs-${c}-rate">
+          <option value="">Neutral</option>
+          <option value="bullish">↑ Bullish</option>
+          <option value="bearish">↓ Bearish</option>
+        </select>
+      </div>
+      <div class="cfs-field">
+        <label>CPI</label>
+        <select id="cs-${c}-cpi">
+          <option value="">Neutral</option>
+          <option value="rising">↑ Rising</option>
+          <option value="falling">↓ Falling</option>
+        </select>
+      </div>
+    ${c !== 'XAU' ? `
+      <div class="cfs-field">
+        <label>Employment</label>
+        <select id="cs-${c}-employment">
+          <option value="">Neutral</option>
+          <option value="strong">Strong</option>
+          <option value="weak">Weak</option>
+        </select>
+      </div>
+      <div class="cfs-field">
+        <label>CB Stance</label>
+        <select id="cs-${c}-stance">
+          <option value="">Neutral</option>
+          <option value="hawkish">Hawkish</option>
+          <option value="dovish">Dovish</option>
+        </select>
+      </div>` : ''}
+    </div>`).join('');
+})();
+
+// ── Settings helpers ─────────────────────────
+function exportCSV() {
+  if (typeof S === 'undefined' || !S.trades.length) { if(typeof _toast==='function') _toast('No trades to export.','warning'); return; }
+  const header = ['Date','Pair','Direction','Entry','SL','TP','R:R','Outcome','Session','Notes'];
+  const rows   = S.trades.map(t => {
+    const d = t.createdAt?.toDate ? t.createdAt.toDate() : new Date();
+    return [
+      d.toLocaleDateString('en-GB'), t.pair||'', t.direction||'',
+      t.entry||'', t.sl||'', t.tp||'', t.rr||'',
+      t.outcome||'', t.session||'', (t.notes||'').replace(/,/g,';')
+    ].join(',');
+  });
+  const blob = new Blob([[header.join(','), ...rows].join('\n')], {type:'text/csv'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'tes_trades_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  if(typeof _toast==='function') _toast('CSV exported ✓','success');
+}
+
+function exportJSON() {
+  if (typeof S === 'undefined' || !S.trades.length) { if(typeof _toast==='function') _toast('No trades to export.','warning'); return; }
+  const blob = new Blob([JSON.stringify(S.trades, null, 2)], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'tes_trades_' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  if(typeof _toast==='function') _toast('JSON exported ✓','success');
+}
+
+function confirmDeleteAll() {
+  if (typeof S === 'undefined' || !S.trades.length) { if(typeof _toast==='function') _toast('No trades to delete.','warning'); return; }
+  // Use a custom confirm instead of alert()
+  const confirmed = confirm('Delete ALL ' + S.trades.length + ' trades? This cannot be undone.');
+  if (!confirmed) return;
+  Promise.all(S.trades.map(t => {
+    if (typeof deleteTrade === 'function') return deleteTrade(t.id);
+    return Promise.resolve();
+  })).then(() => {
+    if(typeof _toast==='function') _toast('All trades deleted.','success');
+  });
+}
+
+// ── Load Chart.js async ───────────────────────
+(function loadChartJS() {
+  if (typeof Chart !== 'undefined') return;
+  const s = document.createElement('script');
+  s.src   = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+  s.async = true;
+  document.head.appendChild(s);
+})();
+</script>
+</body>
+</html>
