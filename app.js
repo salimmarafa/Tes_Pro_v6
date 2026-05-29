@@ -1051,162 +1051,384 @@ function _fbErr(code) {
   };
   return m[code] || 'Something went wrong. Please try again.';
 }
+
 /* ═══════════════════════════════════════════════════════════════
-   PSYCHOLOGY BOOTCAMP INTEGRATION (NEW - Added at end)
+   FIXED PAGE NAVIGATION
+   ═══════════════════════════════════════════════════════════════ */
+
+function goPage(page) {
+
+  // Hide all pages
+  document.querySelectorAll('.page').forEach(p => {
+    p.style.display = 'none';
+  });
+
+  // Show target page
+  const target = document.getElementById('page-' + page);
+
+  if (target) {
+    target.style.display = 'block';
+  }
+
+  // Update nav buttons
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.classList.remove('active');
+  });
+
+  const activeBtn = document.querySelector(`[data-page="${page}"]`);
+
+  if (activeBtn) {
+    activeBtn.classList.add('active');
+  }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   SAFE NAVIGATION EVENT LISTENERS
+   ═══════════════════════════════════════════════════════════════ */
+
+  // Navigation buttons
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+
+    btn.addEventListener('click', () => {
+
+      const page = btn.dataset.page;
+
+      if (!page) return;
+
+      // Psychology handled separately
+      if (page === 'psychology') return;
+
+      goPage(page);
+
+    });
+
+  });
+
+});
+
+
+/* ═══════════════════════════════════════════════════════════════
+   PSYCHOLOGY BOOTCAMP INTEGRATION (FIXED)
    ═══════════════════════════════════════════════════════════════ */
 
 // Load Psychology from localStorage
 function _loadPsychologyState() {
+
   if (!S.user) return;
+
   try {
-    const saved = JSON.parse(localStorage.getItem('tes_psych_' + S.user.uid));
+
+    const saved = JSON.parse(
+      localStorage.getItem('tes_psych_' + S.user.uid)
+    );
+
     if (saved) {
-      S.psychologyState = { ...S.psychologyState, ...saved };
+      S.psychologyState = {
+        ...S.psychologyState,
+        ...saved
+      };
     }
+
   } catch (e) {
+
     console.warn('[Psychology] Could not load state:', e);
+
   }
+
 }
+
 
 // Save Psychology to localStorage
 function _savePsychologyState() {
+
   if (!S.user) return;
+
   try {
-    localStorage.setItem('tes_psych_' + S.user.uid, JSON.stringify(S.psychologyState));
+
+    localStorage.setItem(
+      'tes_psych_' + S.user.uid,
+      JSON.stringify(S.psychologyState)
+    );
+
   } catch (e) {
+
     console.warn('[Psychology] Could not save state:', e);
+
   }
+
 }
+
 
 // Show Psychology App
 function showPsychologyApp() {
-  // Hide TES PRO
-  document.getElementById('page-dashboard').style.display = 'none';
-  document.querySelector('.bottom-nav').style.display = 'none';
-  
-  // Show Psychology wrapper
+
+  // Hide dashboard safely
+  const dash = document.getElementById('page-dashboard');
+
+  if (dash) {
+    dash.style.display = 'none';
+  }
+
+  // Hide bottom nav safely
+  const nav = document.querySelector('.bottom-nav');
+
+  if (nav) {
+    nav.style.display = 'none';
+  }
+
+  // Show Psychology wrapper safely
   const psychEl = document.getElementById('psychology-wrapper');
-  if (psychEl) psychEl.style.display = 'flex';
-  
+
+  if (psychEl) {
+
+    psychEl.style.display = 'flex';
+    psychEl.style.pointerEvents = 'auto';
+    psychEl.style.zIndex = '999';
+
+  }
+
   _loadPsychologyState();
+
   _renderPsychologyHub();
 }
 
+
 // Return to TES PRO from Psychology
 function returnToTesPro() {
+
   _savePsychologyState();
-  
-  // Hide Psychology
+
+  // Hide Psychology safely
   const psychEl = document.getElementById('psychology-wrapper');
-  if (psychEl) psychEl.style.display = 'none';
-  
-  // Show TES PRO
-  document.querySelector('.bottom-nav').style.display = 'flex';
+
+  if (psychEl) {
+
+    psychEl.style.display = 'none';
+    psychEl.style.pointerEvents = 'none';
+
+  }
+
+  // Restore nav safely
+  const nav = document.querySelector('.bottom-nav');
+
+  if (nav) {
+    nav.style.display = 'flex';
+  }
+
+  // Go back to dashboard
   goPage('dashboard');
 }
 
+
 // Add Psychology button to navigation
 function _addPsychologyNavButton() {
+
   const nav = document.querySelector('.bottom-nav');
+
   if (!nav) return;
-  
-  // Check if already exists
+
+  // Prevent duplicates
   if (nav.querySelector('[data-page="psychology"]')) return;
-  
+
   const psychBtn = document.createElement('button');
+
   psychBtn.className = 'nav-btn';
+
   psychBtn.setAttribute('data-page', 'psychology');
-  psychBtn.onclick = showPsychologyApp;
-  psychBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="5" r="1.5"/><circle cx="18" cy="18" r="1.5"/></svg>Psychology`;
+
+  psychBtn.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+      <circle cx="12" cy="12" r="10"/>
+      <circle cx="12" cy="12" r="6"/>
+      <circle cx="12" cy="5" r="1.5"/>
+      <circle cx="18" cy="18" r="1.5"/>
+    </svg>
+    Psychology
+  `;
+
+  psychBtn.addEventListener('click', showPsychologyApp);
+
   nav.appendChild(psychBtn);
+
 }
+
 
 // Render Psychology Hub
 function _renderPsychologyHub() {
+
   const wrapper = document.getElementById('psychology-wrapper');
+
   if (!wrapper) return;
-  
+
   const state = S.psychologyState;
+
   const currentRank = _getPsychologyRank(state.xp);
-  
+
   wrapper.innerHTML = `
     <div class="psychology-screen psychology-hub active">
+
       <div class="psychology-header">
+
         <div>
-          <div class="psych-rank">◈ ${currentRank}</div>
-          <div class="psych-title">TRADING PSYCH BOOTCAMP</div>
-          <div class="psych-sub">Trading in the Zone · Mark Douglas Protocol</div>
+          <div class="psych-rank">
+            ◈ ${currentRank}
+          </div>
+
+          <div class="psych-title">
+            TRADING PSYCH BOOTCAMP
+          </div>
+
+          <div class="psych-sub">
+            Trading in the Zone · Mark Douglas Protocol
+          </div>
         </div>
+
         <div style="text-align:right">
-          <div class="psych-xp">⚡ ${state.xp} XP</div>
-          <div class="psych-streak">🔥 ${state.streak} day streak</div>
-          <button class="psych-exit-btn" onclick="returnToTesPro()">← BACK TO TES PRO</button>
+
+          <div class="psych-xp">
+            ⚡ ${state.xp} XP
+          </div>
+
+          <div class="psych-streak">
+            🔥 ${state.streak} day streak
+          </div>
+
+          <button
+            class="psych-exit-btn"
+            onclick="returnToTesPro()"
+          >
+            ← BACK TO TES PRO
+          </button>
+
         </div>
+
       </div>
-      
+
       <div class="psych-xp-bar">
-        <div class="psych-xp-fill" style="width:${_getPsychologyProgress(state.xp)}%"></div>
+        <div
+          class="psych-xp-fill"
+          style="width:${_getPsychologyProgress(state.xp)}%"
+        ></div>
       </div>
-      
+
       <div class="psych-scores">
+
         <div class="psych-score-card">
-          <div class="psych-score-val" style="color:#00ff88">${state.scores.discipline}</div>
-          <div class="psych-score-lbl">Discipline</div>
+          <div class="psych-score-val" style="color:#00ff88">
+            ${state.scores.discipline}
+          </div>
+          <div class="psych-score-lbl">
+            Discipline
+          </div>
         </div>
+
         <div class="psych-score-card">
-          <div class="psych-score-val" style="color:#00ccff">${state.scores.emotion}</div>
-          <div class="psych-score-lbl">Emotion</div>
+          <div class="psych-score-val" style="color:#00ccff">
+            ${state.scores.emotion}
+          </div>
+          <div class="psych-score-lbl">
+            Emotion
+          </div>
         </div>
+
         <div class="psych-score-card">
-          <div class="psych-score-val" style="color:#cc44ff">${state.scores.execution}</div>
-          <div class="psych-score-lbl">Execution</div>
+          <div class="psych-score-val" style="color:#cc44ff">
+            ${state.scores.execution}
+          </div>
+          <div class="psych-score-lbl">
+            Execution
+          </div>
         </div>
+
       </div>
-      
+
       <div class="psych-nav-grid">
-        <button class="psych-nav-btn" onclick="_showPsychologyScreen('levels')">
+
+        <button
+          class="psych-nav-btn"
+          onclick="_showPsychologyScreen('levels')"
+        >
           <div class="psych-nav-icon">⚔️</div>
           <div class="psych-nav-label">LEVELS</div>
           <div class="psych-nav-sub">5 Psychology Levels</div>
         </button>
-        <button class="psych-nav-btn" onclick="_showPsychologyScreen('scenarios')">
+
+        <button
+          class="psych-nav-btn"
+          onclick="_showPsychologyScreen('scenarios')"
+        >
           <div class="psych-nav-icon">🎯</div>
           <div class="psych-nav-label">SCENARIOS</div>
           <div class="psych-nav-sub">Real Trade Drills</div>
         </button>
-        <button class="psych-nav-btn" onclick="_showPsychologyScreen('missions')">
+
+        <button
+          class="psych-nav-btn"
+          onclick="_showPsychologyScreen('missions')"
+        >
           <div class="psych-nav-icon">📋</div>
           <div class="psych-nav-label">MISSIONS</div>
           <div class="psych-nav-sub">Daily Training</div>
         </button>
-        <button class="psych-nav-btn" onclick="_showPsychologyScreen('archetypes')">
+
+        <button
+          class="psych-nav-btn"
+          onclick="_showPsychologyScreen('archetypes')"
+        >
           <div class="psych-nav-icon">🧬</div>
           <div class="psych-nav-label">ARCHETYPE</div>
           <div class="psych-nav-sub">Who Are You?</div>
         </button>
+
       </div>
-      
+
       <div class="psych-quote">
-        <div class="psych-quote-text">"The consistency you seek is in your mind, not in the markets."</div>
-        <div class="psych-quote-author">— Mark Douglas · Trading in the Zone</div>
+
+        <div class="psych-quote-text">
+          "The consistency you seek is in your mind, not in the markets."
+        </div>
+
+        <div class="psych-quote-author">
+          — Mark Douglas · Trading in the Zone
+        </div>
+
       </div>
+
     </div>
   `;
 }
 
+
 function _showPsychologyScreen(screen) {
-  _toast(`Psychology ${screen} feature coming soon!`, 'success');
+
+  _toast(
+    `Psychology ${screen} feature coming soon!`,
+    'success'
+  );
+
 }
+
 
 function _getPsychologyRank(xp) {
+
   if (xp >= 1500) return 'ELITE OPERATOR';
+
   if (xp >= 900) return 'SERGEANT';
+
   if (xp >= 500) return 'CORPORAL';
+
   if (xp >= 200) return 'PRIVATE';
+
   return 'RECRUIT';
+
 }
 
+
 function _getPsychologyProgress(xp) {
+
   const maxXp = 2000;
+
   return Math.min((xp / maxXp) * 100, 100);
+
 }
