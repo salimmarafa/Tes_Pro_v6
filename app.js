@@ -856,6 +856,126 @@ function renderTradeSuggestions(rankings) {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   EXECUTION INTELLIGENCE
+   ═══════════════════════════════════════════════════════════ */
+function generateTopTradePlan() {
+  const rankings = S.rankings || [];
+  const insightEl = document.getElementById('trade-insight');
+  const planEl    = document.getElementById('trade-plan');
+
+  if (!rankings.length) {
+    if (insightEl) insightEl.innerHTML = '<p style="color:#ff4560;font-size:13px">⚠️ Run Currency Analysis first to generate a trade plan.</p>';
+    return;
+  }
+
+  const strongest = rankings[0];
+  const weakest   = rankings[rankings.length - 1];
+  const second    = rankings[1];
+  const secondW   = rankings[rankings.length - 2];
+
+  // Trade insight
+  if (insightEl) {
+    insightEl.innerHTML = `
+      <div style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:14px;margin-bottom:8px">
+        <div style="font-size:11px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Market Insight</div>
+        <div style="font-size:13px;color:#eef2ff;line-height:1.6">
+          <strong style="color:#e4ae2a">${strongest.currency}</strong> is the strongest currency (score: ${strongest.score > 0 ? '+' : ''}${strongest.score}).
+          <strong style="color:#ff4560">${weakest.currency}</strong> is the weakest (score: ${weakest.score}).
+          The highest divergence pair is <strong style="color:#00d4a1">${strongest.currency}/${weakest.currency}</strong> with a spread of ${(strongest.score - weakest.score).toFixed(1)} points.
+        </div>
+      </div>`;
+  }
+
+  // Structured trade plan
+  if (planEl) {
+    const col1 = '#00d4a1';
+    const col2 = '#e4ae2a';
+    planEl.innerHTML = `
+      <div style="background:#10172a;border:1px solid rgba(0,212,161,.2);border-radius:10px;padding:14px;margin-bottom:8px">
+        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">🥇 Primary Setup</div>
+        <div style="font-size:18px;font-weight:900;color:${col1};margin-bottom:4px">BUY ${strongest.currency}/${weakest.currency}</div>
+        <div style="font-size:12px;color:#5a6a8a;line-height:1.6">
+          ✓ ${strongest.currency} strong (${strongest.score > 0 ? '+' : ''}${strongest.score}) vs ${weakest.currency} weak (${weakest.score})<br>
+          ✓ Confirm on H4 chart — look for BOS or structure break<br>
+          ✓ Enter on retest of key support / demand zone<br>
+          ✓ Stop Loss: below structure / recent swing low<br>
+          ✓ Target: minimum 1:2 Risk:Reward
+        </div>
+      </div>
+      <div style="background:#10172a;border:1px solid rgba(228,174,42,.15);border-radius:10px;padding:14px;margin-bottom:8px">
+        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">🥈 Secondary Setup</div>
+        <div style="font-size:16px;font-weight:900;color:${col2};margin-bottom:4px">BUY ${second?.currency || '—'}/${secondW?.currency || '—'}</div>
+        <div style="font-size:12px;color:#5a6a8a;line-height:1.6">
+          ✓ Second strongest vs second weakest divergence<br>
+          ✓ Trade only if primary setup is not available<br>
+          ✓ Same entry rules apply — structure + zone confirmation
+        </div>
+      </div>
+      <div style="background:#10172a;border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px">
+        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">⚠️ Risk Management Rules</div>
+        <div style="font-size:12px;color:#5a6a8a;line-height:1.8">
+          • Max risk per trade: 1–2% of account<br>
+          • No trading 30 min before/after high-impact news<br>
+          • Trade during London or NY session only<br>
+          • Cancel setup if market structure changes
+        </div>
+      </div>`;
+  }
+  _toast('Trade plan generated ✓', 'success');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   NEWS DECISION ENGINE
+   ═══════════════════════════════════════════════════════════ */
+function analyzeNewsImpact() {
+  const currency = document.getElementById('news-currency')?.value || 'USD';
+  const event    = document.getElementById('news-event')?.value    || 'cpi';
+  const outcome  = document.getElementById('news-outcome')?.value  || 'better';
+  const el       = document.getElementById('news-impact');
+  if (!el) return;
+
+  // Matrix: [event][outcome] → { bias, reason, action }
+  const matrix = {
+    cpi: {
+      better: { bias: 'BULLISH', cur: currency, reason: `Higher-than-expected CPI → rate hike expectations rise → ${currency} strengthens`, action: `BUY ${currency} pairs. Look for ${currency}JPY, ${currency}CHF longs.` },
+      worse:  { bias: 'BEARISH', cur: currency, reason: `Lower-than-expected CPI → rate cut expectations rise → ${currency} weakens`,    action: `SELL ${currency} pairs. Look for EUR${currency}, GBP${currency} longs.` }
+    },
+    rate: {
+      better: { bias: 'BULLISH', cur: currency, reason: `Rate hike or hawkish surprise → immediate ${currency} strength`, action: `BUY ${currency} on the spike. Wait for retest before entry.` },
+      worse:  { bias: 'BEARISH', cur: currency, reason: `Rate cut or dovish surprise → immediate ${currency} weakness`,  action: `SELL ${currency} on the spike. Wait for retest before entry.` }
+    },
+    nfp: {
+      better: { bias: 'BULLISH', cur: currency, reason: `Strong employment → economy strong → Fed less likely to cut → ${currency} bid`,  action: `BUY ${currency}. EURUSD sell, GBPUSD sell if USD.` },
+      worse:  { bias: 'BEARISH', cur: currency, reason: `Weak employment → economy slowing → rate cut pressure → ${currency} offered`, action: `SELL ${currency}. EURUSD buy, GBPUSD buy if USD.` }
+    },
+    gdp: {
+      better: { bias: 'BULLISH', cur: currency, reason: `Strong GDP → economic growth → rate hike bets increase → ${currency} stronger`, action: `BUY ${currency} pairs on pullbacks.` },
+      worse:  { bias: 'BEARISH', cur: currency, reason: `Weak GDP → economic slowdown → rate cut expected → ${currency} weaker`,         action: `SELL ${currency} pairs on pullbacks.` }
+    }
+  };
+
+  const result = matrix[event]?.[outcome];
+  if (!result) { el.innerHTML = '<p style="color:#5a6a8a">No data for this combination.</p>'; return; }
+
+  const col    = result.bias === 'BULLISH' ? '#00d4a1' : '#ff4560';
+  const arrow  = result.bias === 'BULLISH' ? '↑' : '↓';
+
+  el.innerHTML = `
+    <div style="background:#10172a;border:1px solid ${col}30;border-radius:10px;padding:14px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="width:36px;height:36px;border-radius:8px;background:${col}18;border:1px solid ${col}40;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:${col}">${arrow}</div>
+        <div>
+          <div style="font-size:16px;font-weight:900;color:${col}">${result.bias} ${result.cur}</div>
+          <div style="font-size:11px;color:#5a6a8a">Based on ${event.toUpperCase()} ${outcome === 'better' ? 'beat' : 'miss'}</div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:#7a8eb0;line-height:1.6;margin-bottom:10px;padding:10px;background:#141e33;border-radius:8px">${result.reason}</div>
+      <div style="font-size:11px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Suggested Action</div>
+      <div style="font-size:13px;color:#eef2ff;font-weight:600">${result.action}</div>
+    </div>`;
+}
+
+/* ═══════════════════════════════════════════════════════════
    RISK CALCULATOR — [N9]
    Formula per prompt spec:
      pipDistance = |entry − stopLoss| × 10000
@@ -1060,7 +1180,7 @@ function _savePsychologyState() {
 function showPsychologyApp() {
   document.getElementById('screen-app').style.display = 'none';
   const w = document.getElementById('psychology-wrapper');
-  if (w) w.style.display = 'flex';
+  if (w) w.style.display = 'block';
   _loadPsychologyState();
   _renderPsychologyHub();
 }
@@ -1069,7 +1189,7 @@ function returnToTesPro() {
   _savePsychologyState();
   const w = document.getElementById('psychology-wrapper');
   if (w) w.style.display = 'none';
-  document.getElementById('screen-app').style.display = 'flex';
+  document.getElementById('screen-app').style.display = 'block';
 }
 
 function _addPsychologyNavButton() {
