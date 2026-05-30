@@ -939,6 +939,64 @@
         </div>
       </div>
 
+      <!-- Execution Intelligence -->
+      <div class="cfs-card" style="margin-bottom:16px">
+        <div class="cfs-header" style="margin-bottom:4px">
+          <span style="font-size:20px">🧠</span>
+          <span class="cfs-title">Execution Intelligence</span>
+        </div>
+        <div class="cfs-sub">Insight and structured trade plan from your macro analysis.</div>
+        <div id="trade-insight" style="margin-bottom:14px">
+          <p style="color:var(--t3);font-size:13px">Run analysis to generate trade insight.</p>
+        </div>
+        <button onclick="generateTopTradePlan()" style="width:100%;padding:13px;background:var(--gold);color:#000;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;letter-spacing:.3px;margin-bottom:14px">⚡ Generate Trade Plan</button>
+        <div id="trade-plan">
+          <p style="color:var(--t3);font-size:13px">Click above to generate your structured trade plan.</p>
+        </div>
+      </div>
+
+      <!-- News Decision Engine -->
+      <div class="cfs-card" style="margin-bottom:16px">
+        <div class="cfs-header" style="margin-bottom:4px">
+          <span style="font-size:20px">📢</span>
+          <span class="cfs-title">News Decision Engine</span>
+        </div>
+        <div class="cfs-sub" style="margin-bottom:14px">Select a news event and outcome — get an instant trade bias.</div>
+        <div class="rc-grid" style="margin-bottom:10px">
+          <div class="fg" style="margin:0">
+            <label>Currency</label>
+            <select id="news-currency">
+              <option value="USD">USD — US Dollar</option>
+              <option value="EUR">EUR — Euro</option>
+              <option value="GBP">GBP — British Pound</option>
+              <option value="JPY">JPY — Japanese Yen</option>
+              <option value="AUD">AUD — Australian Dollar</option>
+              <option value="NZD">NZD — New Zealand Dollar</option>
+              <option value="CAD">CAD — Canadian Dollar</option>
+              <option value="CHF">CHF — Swiss Franc</option>
+            </select>
+          </div>
+          <div class="fg" style="margin:0">
+            <label>Event Type</label>
+            <select id="news-event">
+              <option value="cpi">CPI — Inflation</option>
+              <option value="rate">Interest Rate Decision</option>
+              <option value="nfp">Employment / NFP</option>
+              <option value="gdp">GDP — Growth</option>
+            </select>
+          </div>
+        </div>
+        <div class="fg" style="margin-bottom:14px">
+          <label>Outcome vs Forecast</label>
+          <select id="news-outcome">
+            <option value="better">Better than expected ↑</option>
+            <option value="worse">Worse than expected ↓</option>
+          </select>
+        </div>
+        <button class="btn-calc" onclick="analyzeNewsImpact()" style="width:100%;padding:13px;font-size:14px;font-weight:800">⚡ Analyze News Impact</button>
+        <div id="news-impact" style="margin-top:14px"></div>
+      </div>
+
     </div><!-- /macro -->
 
     <!-- ▸ GOLD DESK ─────────────────────────────────────────── -->
@@ -1090,7 +1148,7 @@
   </div><!-- /app-body -->
 
   <!-- Psychology fullscreen overlay -->
-  <div id="psychology-wrapper" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:100;background:#080c14;overflow-y:auto;flex-direction:column"></div>
+  <div id="psychology-wrapper" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:100;background:#080c14;overflow-y:auto"></div>
 
   <!-- Bottom nav (5 items to match screenshot) -->
   <nav class="bottom-nav">
