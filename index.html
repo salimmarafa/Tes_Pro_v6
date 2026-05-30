@@ -539,49 +539,6 @@
     .an-grid{grid-template-columns:repeat(4,1fr)}
     .cfs-grid{grid-template-columns:repeat(4,1fr)}
   }
-  
-  /* ════════════════════════════════════════════════════════════
-     PSYCHOLOGY BOOTCAMP — CSS
-     ════════════════════════════════════════════════════════════ */
-  #psychology-wrapper {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 100;
-    background: #080c14;
-    overflow-y: auto;
-    flex-direction: column;
-  }
-  .psychology-screen { display: none; animation: fadeUp .3s ease; min-height: 100vh; }
-  .psychology-screen.active { display: block; }
-  .psychology-hub { max-width: 660px; margin: 0 auto; padding: 20px 16px; padding-bottom: 100px; }
-  .psychology-header { display: flex; justify-content: space-between; align-items: flex-start; padding: 24px 0 16px; border-bottom: 1px solid rgba(255,255,255,.07); margin-bottom: 20px; }
-  .psych-rank { font-size: 10px; color: #00ff88; letter-spacing: 3px; margin-bottom: 4px; font-weight: bold; text-transform: uppercase; }
-  .psych-title { font-size: 18px; font-weight: 900; color: #eef2ff; letter-spacing: 2px; }
-  .psych-sub { font-size: 10px; color: #5a6a8a; margin-top: 2px; letter-spacing: 1px; }
-  .psych-xp { font-size: 18px; color: #e4ae2a; font-weight: bold; text-align: right; margin-bottom: 6px; }
-  .psych-streak { font-size: 11px; color: #ff6644; margin-bottom: 12px; }
-  .psych-exit-btn { background: transparent; border: 1px solid #ff4466; color: #ff4466; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 700; transition: all .2s; letter-spacing: 1px; }
-  .psych-exit-btn:hover { background: rgba(255, 69, 96, .1); transform: translateY(-1px); }
-  .psych-xp-bar { height: 4px; background: rgba(255,255,255,.07); border-radius: 2px; overflow: hidden; margin-bottom: 6px; }
-  .psych-xp-fill { height: 100%; background: linear-gradient(90deg, #00ff88, #00ccff); transition: width .6s ease; border-radius: 2px; }
-  .psych-scores { display: flex; gap: 8px; margin-bottom: 20px; }
-  .psych-score-card { flex: 1; background: #10172a; border: 1px solid rgba(255,255,255,.07); border-radius: 8px; padding: 10px 8px; text-align: center; }
-  .psych-score-val { font-size: 22px; font-weight: 900; margin-bottom: 3px; }
-  .psych-score-lbl { font-size: 9px; color: #5a6a8a; text-transform: uppercase; letter-spacing: .7px; margin-top: 2px; }
-  .psych-nav-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
-  .psych-nav-btn { background: #10172a; border: 1px solid rgba(255,255,255,.07); border-radius: 10px; padding: 14px 12px; cursor: pointer; text-align: left; transition: all .2s; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
-  .psych-nav-btn:hover { border-color: rgba(255,255,255,.13); transform: translateY(-1px); }
-  .psych-nav-icon { font-size: 20px; }
-  .psych-nav-label { font-size: 13px; font-weight: 700; color: #eef2ff; letter-spacing: 1px; }
-  .psych-nav-sub { font-size: 10px; color: #5a6a8a; letter-spacing: .5px; }
-  .psych-quote { background: #141e33; border: 1px solid rgba(255,255,255,.07); border-left: 3px solid rgba(228,174,42,.5); border-radius: 8px; padding: 16px 18px; margin-bottom: 20px; }
-  .psych-quote-text { font-size: 14px; line-height: 1.6; color: #5a6a8a; font-style: italic; margin-bottom: 4px; }
-  .psych-quote-author { font-size: 12px; color: #3a4a66; font-style: normal; }
-  @media (max-width: 420px) { .psychology-header { flex-direction: column; gap: 12px; } .psych-nav-grid { grid-template-columns: 1fr; } .psych-title { font-size: 16px; } }
   </style>
 </head>
 <body>
@@ -698,6 +655,12 @@
           <div class="home-stat-val" id="hstat-rr">—</div>
           <div class="home-stat-key">Avg R:R</div>
         </div>
+      </div>
+
+      <!-- Session Timer -->
+      <div style="background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px;margin-bottom:14px" id="session-timer-card">
+        <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px">📅 Trading Sessions (GMT)</div>
+        <div style="font-size:12px;color:var(--t2)">Loading sessions…</div>
       </div>
 
       <!-- Weekly Bias summary -->
@@ -978,149 +941,94 @@
 
     </div><!-- /macro -->
 
-    <!-- ▸ GOLD DESK ────────────────────────────────────────── -->
+    <!-- ▸ GOLD DESK ─────────────────────────────────────────── -->
     <div class="page" id="page-gold">
-      <div style="padding-top:8px;margin-bottom:24px">
-        <div style="font-size:26px;font-weight:900;letter-spacing:-.5px;color:var(--gold)">⭐ TES Gold Desk</div>
-        <div style="font-size:13px;color:var(--t2);margin-top:4px">XAUUSD institutional bias engine</div>
-      </div>
+      <div class="ph"><div><h1 style="color:var(--gold)">⭐ TES Gold Desk</h1><p class="ph-sub">XAUUSD institutional bias engine</p></div></div>
 
-      <!-- XAUUSD Bias Engine -->
-      <div style="background:var(--card);border:1px solid rgba(228,174,42,.18);border-radius:16px;padding:20px;margin-bottom:16px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
-          <span style="font-size:20px">⚡</span>
-          <span style="font-size:14px;font-weight:800;color:var(--t1);text-transform:uppercase;letter-spacing:.6px">XAUUSD Bias Engine</span>
-        </div>
-        <div style="font-size:12px;color:var(--t2);margin-bottom:16px">Macro-driven directional bias for gold</div>
-        
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      <!-- Bias Engine -->
+      <div class="cfs-card">
+        <div class="cfs-header"><span class="cfs-icon">⚡</span><span class="cfs-title">XAUUSD Bias Engine</span></div>
+        <div class="cfs-sub">Set all 5 macro drivers to generate your Gold bias</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0 10px">
           <div>
-            <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">USD Strength</div>
-            <select id="gd-usd-strength" style="width:100%;padding:11px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;color:var(--t1);font-size:13px;-webkit-appearance:none">
-              <option value="">Select...</option>
-              <option value="strong">Strong</option>
-              <option value="neutral">Neutral</option>
-              <option value="weak">Weak</option>
+            <div class="cfs-sub" style="margin-bottom:5px">USD Strength</div>
+            <select id="gd-usd-strength" class="cs-sel">
+              <option value="">Select…</option><option value="strong">Strong</option><option value="neutral">Neutral</option><option value="weak">Weak</option>
             </select>
           </div>
           <div>
-            <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Bond Yields</div>
-            <select id="gd-yields" style="width:100%;padding:11px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;color:var(--t1);font-size:13px;-webkit-appearance:none">
-              <option value="">Select...</option>
-              <option value="rising">Rising</option>
-              <option value="flat">Flat</option>
-              <option value="falling">Falling</option>
+            <div class="cfs-sub" style="margin-bottom:5px">Bond Yields</div>
+            <select id="gd-yields" class="cs-sel">
+              <option value="">Select…</option><option value="rising">Rising</option><option value="flat">Flat</option><option value="falling">Falling</option>
             </select>
           </div>
           <div>
-            <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Fed Stance</div>
-            <select id="gd-fed" style="width:100%;padding:11px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;color:var(--t1);font-size:13px;-webkit-appearance:none">
-              <option value="">Select...</option>
-              <option value="hawkish">Hawkish</option>
-              <option value="neutral">Neutral</option>
-              <option value="dovish">Dovish</option>
+            <div class="cfs-sub" style="margin-bottom:5px">Fed Stance</div>
+            <select id="gd-fed" class="cs-sel">
+              <option value="">Select…</option><option value="hawkish">Hawkish</option><option value="neutral">Neutral</option><option value="dovish">Dovish</option>
             </select>
           </div>
           <div>
-            <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Risk Sentiment</div>
-            <select id="gd-risk" style="width:100%;padding:11px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;color:var(--t1);font-size:13px;-webkit-appearance:none">
-              <option value="">Select...</option>
-              <option value="risk-on">Risk-On</option>
-              <option value="neutral">Neutral</option>
-              <option value="risk-off">Risk-Off</option>
+            <div class="cfs-sub" style="margin-bottom:5px">Risk Sentiment</div>
+            <select id="gd-risk" class="cs-sel">
+              <option value="">Select…</option><option value="risk-on">Risk-On</option><option value="neutral">Neutral</option><option value="risk-off">Risk-Off</option>
             </select>
           </div>
         </div>
-        
         <div style="margin-bottom:12px">
-          <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Inflation Expectations</div>
-          <select id="gd-inflation" style="width:100%;padding:11px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;color:var(--t1);font-size:13px;-webkit-appearance:none">
-            <option value="">Select...</option>
-            <option value="rising">Rising (above 2% target)</option>
-            <option value="stable">Stable (near 2%)</option>
-            <option value="falling">Falling (below 2%)</option>
+          <div class="cfs-sub" style="margin-bottom:5px">Inflation Expectations</div>
+          <select id="gd-inflation" class="cs-sel" style="width:100%">
+            <option value="">Select…</option><option value="rising">Rising (above 2%)</option><option value="stable">Stable (near 2%)</option><option value="falling">Falling (below 2%)</option>
           </select>
         </div>
-        
-        <button onclick="runGoldBiasEngine()" style="width:100%;padding:13px;background:var(--gold);color:#000;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;letter-spacing:.3px">⚡ Generate Gold Bias</button>
-        <div id="gd-bias-result" style="display:none;margin-top:16px"></div>
+        <button class="btn-primary" onclick="runGoldBiasEngine()">⚡ Generate Gold Bias</button>
+        <div id="gd-bias-result" style="display:none;margin-top:14px"></div>
       </div>
 
       <!-- Why Gold Moved -->
-      <div style="background:var(--card);border:1px solid rgba(228,174,42,.18);border-radius:16px;padding:20px;margin-bottom:16px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
-          <span style="font-size:20px">📌</span>
-          <span style="font-size:14px;font-weight:800;color:var(--t1);text-transform:uppercase;letter-spacing:.6px">Why Gold Moved Today</span>
-        </div>
-        <div style="font-size:12px;color:var(--t2);margin-bottom:16px">Macro narrative for today's price action</div>
-        
+      <div class="cfs-card">
+        <div class="cfs-header"><span class="cfs-icon">📌</span><span class="cfs-title">Why Gold Moved Today</span></div>
+        <div class="cfs-sub" style="margin-bottom:14px">Identify the macro narrative behind today's price action</div>
         <div style="margin-bottom:10px">
-          <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Gold Direction Today</div>
-          <select id="gd-moved-direction" style="width:100%;padding:11px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;color:var(--t1);font-size:13px;-webkit-appearance:none">
-            <option value="">Select...</option>
-            <option value="rallied">Gold Rallied</option>
-            <option value="sold-off">Gold Sold Off</option>
-            <option value="ranging">Gold Ranging</option>
+          <div class="cfs-sub" style="margin-bottom:5px">Direction Today</div>
+          <select id="gd-moved-direction" class="cs-sel" style="width:100%">
+            <option value="">Select…</option><option value="rallied">Gold Rallied</option><option value="sold-off">Gold Sold Off</option><option value="ranging">Gold Ranging</option>
           </select>
         </div>
-        
-        <div style="margin-bottom:10px">
-          <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Key Driver</div>
-          <select id="gd-moved-driver" style="width:100%;padding:11px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;color:var(--t1);font-size:13px;-webkit-appearance:none">
-            <option value="">Select...</option>
-            <option value="cpi">CPI Data</option>
-            <option value="nfp">NFP / Jobs Data</option>
-            <option value="fomc">FOMC / Fed Statement</option>
-            <option value="geopolitical">Geopolitical Risk</option>
-            <option value="yields">Bond Yield Move</option>
-            <option value="usd">USD Strength</option>
+        <div style="margin-bottom:12px">
+          <div class="cfs-sub" style="margin-bottom:5px">Key Driver</div>
+          <select id="gd-moved-driver" class="cs-sel" style="width:100%">
+            <option value="">Select…</option><option value="cpi">CPI / Inflation</option><option value="nfp">NFP / Jobs</option><option value="fomc">FOMC / Fed</option><option value="geopolitical">Geopolitical Risk</option><option value="yields">Bond Yields</option><option value="usd">USD Strength</option>
           </select>
         </div>
-        
-        <button onclick="runWhyGoldMoved()" style="width:100%;padding:13px;background:var(--gold);color:#000;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;letter-spacing:.3px;margin-bottom:14px">📌 Explain Gold Move</button>
-        <div id="gd-moved-result" style="display:none"></div>
+        <button class="btn-primary" onclick="runWhyGoldMoved()">📌 Explain the Move</button>
+        <div id="gd-moved-result" style="display:none;margin-top:14px"></div>
       </div>
 
       <!-- Gold News Interpreter -->
-      <div style="background:var(--card);border:1px solid rgba(228,174,42,.18);border-radius:16px;padding:20px;margin-bottom:16px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
-          <span style="font-size:20px">📰</span>
-          <span style="font-size:14px;font-weight:800;color:var(--t1);text-transform:uppercase;letter-spacing:.6px">Gold News Interpreter</span>
+      <div class="cfs-card">
+        <div class="cfs-header"><span class="cfs-icon">📰</span><span class="cfs-title">Gold News Interpreter</span></div>
+        <div class="cfs-sub" style="margin-bottom:14px">Predict Gold's reaction to economic events</div>
+        <div style="margin-bottom:10px">
+          <div class="cfs-sub" style="margin-bottom:5px">News Event</div>
+          <select id="gd-news-event" class="cs-sel" style="width:100%">
+            <option value="">Select event…</option><option value="cpi">CPI (Inflation Report)</option><option value="nfp">NFP (Non-Farm Payrolls)</option><option value="fomc">FOMC Rate Decision</option><option value="employment">Employment Change</option><option value="gdp">GDP Report</option>
+          </select>
         </div>
-        <div style="font-size:12px;color:var(--t2);margin-bottom:16px">Select a news event to get gold's expected reaction</div>
-        
-        <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">News Event</div>
-        <select id="gd-news-event" style="width:100%;padding:11px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;color:var(--t1);font-size:13px;margin-bottom:10px;-webkit-appearance:none">
-          <option value="">Select event...</option>
-          <option value="cpi">CPI (Inflation Report)</option>
-          <option value="nfp">NFP (Non-Farm Payrolls)</option>
-          <option value="fomc">FOMC Rate Decision</option>
-          <option value="employment">Employment Change</option>
-          <option value="gdp">GDP Report</option>
-        </select>
-        
-        <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Outcome vs Forecast</div>
-        <select id="gd-news-outcome" style="width:100%;padding:11px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;color:var(--t1);font-size:13px;margin-bottom:14px;-webkit-appearance:none">
-          <option value="">Select outcome...</option>
-          <option value="better">Better than expected</option>
-          <option value="worse">Worse than expected</option>
-          <option value="inline">Inline with forecast</option>
-          <option value="hike">Rate Hike</option>
-          <option value="cut">Rate Cut</option>
-          <option value="hold">Hold (no change)</option>
-        </select>
-        
-        <button onclick="runGoldNewsInterpreter()" style="width:100%;padding:13px;background:var(--gold);color:#000;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;letter-spacing:.3px">⚡ Interpret News Impact on Gold</button>
-        <div id="gd-news-result" style="margin-top:14px;padding:16px;background:var(--bg2);border:1px solid var(--bd);border-radius:12px;display:none"></div>
+        <div style="margin-bottom:12px">
+          <div class="cfs-sub" style="margin-bottom:5px">Outcome vs Forecast</div>
+          <select id="gd-news-outcome" class="cs-sel" style="width:100%">
+            <option value="">Select outcome…</option><option value="better">Better than expected</option><option value="worse">Worse than expected</option><option value="inline">Inline with forecast</option><option value="hike">Rate Hike</option><option value="cut">Rate Cut</option><option value="hold">Hold (no change)</option>
+          </select>
+        </div>
+        <button class="btn-primary" onclick="runGoldNewsInterpreter()">⚡ Predict Gold Reaction</button>
+        <div id="gd-news-result" style="display:none;margin-top:14px"></div>
       </div>
 
       <!-- Gold Sessions -->
-      <div style="background:var(--card);border:1px solid rgba(228,174,42,.18);border-radius:16px;padding:20px;margin-bottom:16px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
-          <span style="font-size:20px">⏰</span>
-          <span style="font-size:14px;font-weight:800;color:var(--t1);text-transform:uppercase;letter-spacing:.6px">Gold Session Volatility</span>
-        </div>
-        <div style="font-size:12px;color:var(--t2);margin-bottom:16px">Best windows to trade XAUUSD</div>
+      <div class="cfs-card">
+        <div class="cfs-header"><span class="cfs-icon">⏰</span><span class="cfs-title">Gold Session Volatility</span></div>
+        <div class="cfs-sub" style="margin-bottom:14px">Best windows to trade XAUUSD</div>
         <div id="gd-sessions-wrap"></div>
         <div id="gd-session-advice" style="margin-top:10px;font-size:12px;color:var(--t2);text-align:center"></div>
       </div>
@@ -1181,10 +1089,8 @@
 
   </div><!-- /app-body -->
 
-  <!-- ════════════════ PSYCHOLOGY BOOTCAMP ════════════════ -->
-  <div id="psychology-wrapper" style="display:none">
-    <!-- Psychology screens render here -->
-  </div>
+  <!-- Psychology fullscreen overlay -->
+  <div id="psychology-wrapper" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:100;background:#080c14;overflow-y:auto;flex-direction:column"></div>
 
   <!-- Bottom nav (5 items to match screenshot) -->
   <nav class="bottom-nav">
@@ -1204,7 +1110,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/></svg>Macro
     </button>
     <button class="nav-btn" data-page="gold" onclick="goPage('gold')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 15 9 22 9 16 14 19 22 12 17 5 22 8 14 2 9 9 9 12 2"/></svg>Gold
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>Gold
+    </button>
+    <button class="nav-btn" data-psych-btn="1" onclick="showPsychologyApp()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a5 5 0 0 1 10 0v1.662"/></svg>Psychology
     </button>
     <button class="nav-btn" data-page="settings" onclick="goPage('settings')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Settings
