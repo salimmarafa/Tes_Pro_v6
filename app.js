@@ -275,6 +275,11 @@ function _launchApp() {
   fetchAndInjectMacroData();
   // [SESSION 2 - TASK 3] Auto-load news sentiment
   fetchAndInjectNewsSentiment();
+  // Psychology + Session Timer + Gold sessions
+  _addPsychologyNavButton();
+  _loadPsychologyState();
+  _startSessionTimer();
+  _renderGoldSessions();
 }
 
 function _teardown() {
@@ -1369,29 +1374,7 @@ function _startSessionTimer() {
   setInterval(update, 60000);
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   PATCH _launchApp — add Psychology + Timer + Gold init
-   ═══════════════════════════════════════════════════════════════ */
-const _launchApp_ORIGINAL = _launchApp;
-function _launchApp() {
-  _launchApp_ORIGINAL();
-  // Add Psychology nav button
-  _addPsychologyNavButton();
-  _loadPsychologyState();
-  // Start session timer
-  _startSessionTimer();
-  // Ensure Gold sessions render if on gold page
-  _renderGoldSessions();
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   PATCH goPage — handle Gold Desk page
-   ═══════════════════════════════════════════════════════════════ */
-const _goPage_ORIGINAL = typeof goPage === 'function' ? goPage : null;
-function goPage(id) {
-  if (_goPage_ORIGINAL) _goPage_ORIGINAL(id);
-  if (id === 'gold') _initGoldPage();
-}
+/* ─── Psychology state init ─────────────────────────────────── */
 
 /* ── Psychology state init on S object ─────────────────────── */
 S.psychologyState = S.psychologyState || {
