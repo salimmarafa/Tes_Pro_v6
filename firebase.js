@@ -33,7 +33,7 @@ var USD_TO_NGN = 1500;
 // Subscription pricing in USD
 var PLAN_PRICES_USD = {
   monthly: 5,
-  annual: 35
+  annual: 30
 };
 
 // Helper: Check if user is owner
