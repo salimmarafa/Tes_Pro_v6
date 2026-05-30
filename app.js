@@ -20,9 +20,10 @@ const SUB_MS = {
 };
 
 const TRIAL_MS = 3 * 24 * 60 * 60 * 1000; // 3 days free trial
-const PAYSTACK_PUBLIC_KEY = (typeof window !== 'undefined' && window.PAYSTACK_PUBLIC_KEY) || '';
-const USD_TO_NGN = (typeof window !== 'undefined' && window.USD_TO_NGN) || 1500;
-const PLAN_PRICES_USD = (typeof window !== 'undefined' && window.PLAN_PRICES_USD) || { monthly: 15, annual: 120 };
+// These are defined in firebase.js - reference them from window
+const PAYSTACK_PUBLIC_KEY = window.PAYSTACK_PUBLIC_KEY || '';
+const USD_TO_NGN = window.USD_TO_NGN || 1500;
+const PLAN_PRICES_USD = window.PLAN_PRICES_USD || { monthly: 15, annual: 120 };
 
 // Tradeable pairs we suggest
 const TRADE_PAIRS = [
@@ -31,11 +32,6 @@ const TRADE_PAIRS = [
   ['USD','CAD'],['USD','CHF'],['EUR','GBP'],['EUR','CHF'],
   ['GBP','CAD'],['GBP','CHF'],['NZD','JPY']
 ];
-
-/* ─── OWNER BYPASS ─────────────────────────────────────────── */
-function isOwner(email) {
-  return email === 'salimmarafa12@gmail.com';
-}
 
 /* ─── FIREBASE CONFIG ──────────────────────────────────────── */
 let _auth, _firestore, _storage;
