@@ -659,8 +659,8 @@
 
       <!-- Session Timer -->
       <div style="background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px;margin-bottom:14px" id="session-timer-card">
-        <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px">📅 Trading Sessions (GMT)</div>
-        <div style="font-size:12px;color:var(--t2)">Loading sessions…</div>
+        <div style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">📅 Trading Sessions (GMT)</div>
+        <div style="font-size:12px;color:var(--t2)">Loading…</div>
       </div>
 
       <!-- Weekly Bias summary -->
@@ -950,9 +950,7 @@
           <p style="color:var(--t3);font-size:13px">Run analysis to generate trade insight.</p>
         </div>
         <button onclick="generateTopTradePlan()" style="width:100%;padding:13px;background:var(--gold);color:#000;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;letter-spacing:.3px;margin-bottom:14px">⚡ Generate Trade Plan</button>
-        <div id="trade-plan">
-          <p style="color:var(--t3);font-size:13px">Click above to generate your structured trade plan.</p>
-        </div>
+        <div id="trade-plan"><p style="color:var(--t3);font-size:13px">Click above to generate your structured trade plan.</p></div>
       </div>
 
       <!-- News Decision Engine -->
@@ -966,23 +964,17 @@
           <div class="fg" style="margin:0">
             <label>Currency</label>
             <select id="news-currency">
-              <option value="USD">USD — US Dollar</option>
-              <option value="EUR">EUR — Euro</option>
-              <option value="GBP">GBP — British Pound</option>
-              <option value="JPY">JPY — Japanese Yen</option>
-              <option value="AUD">AUD — Australian Dollar</option>
-              <option value="NZD">NZD — New Zealand Dollar</option>
-              <option value="CAD">CAD — Canadian Dollar</option>
-              <option value="CHF">CHF — Swiss Franc</option>
+              <option value="USD">USD — US Dollar</option><option value="EUR">EUR — Euro</option>
+              <option value="GBP">GBP — British Pound</option><option value="JPY">JPY — Japanese Yen</option>
+              <option value="AUD">AUD — Australian Dollar</option><option value="NZD">NZD — New Zealand Dollar</option>
+              <option value="CAD">CAD — Canadian Dollar</option><option value="CHF">CHF — Swiss Franc</option>
             </select>
           </div>
           <div class="fg" style="margin:0">
             <label>Event Type</label>
             <select id="news-event">
-              <option value="cpi">CPI — Inflation</option>
-              <option value="rate">Interest Rate Decision</option>
-              <option value="nfp">Employment / NFP</option>
-              <option value="gdp">GDP — Growth</option>
+              <option value="cpi">CPI — Inflation</option><option value="rate">Interest Rate Decision</option>
+              <option value="nfp">Employment / NFP</option><option value="gdp">GDP — Growth</option>
             </select>
           </div>
         </div>
@@ -1006,39 +998,19 @@
       <!-- Bias Engine -->
       <div class="cfs-card">
         <div class="cfs-header"><span class="cfs-icon">⚡</span><span class="cfs-title">XAUUSD Bias Engine</span></div>
-        <div class="cfs-sub">Set all 5 macro drivers to generate your Gold bias</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0 10px">
-          <div>
-            <div class="cfs-sub" style="margin-bottom:5px">USD Strength</div>
-            <select id="gd-usd-strength" class="cs-sel">
-              <option value="">Select…</option><option value="strong">Strong</option><option value="neutral">Neutral</option><option value="weak">Weak</option>
-            </select>
-          </div>
-          <div>
-            <div class="cfs-sub" style="margin-bottom:5px">Bond Yields</div>
-            <select id="gd-yields" class="cs-sel">
-              <option value="">Select…</option><option value="rising">Rising</option><option value="flat">Flat</option><option value="falling">Falling</option>
-            </select>
-          </div>
-          <div>
-            <div class="cfs-sub" style="margin-bottom:5px">Fed Stance</div>
-            <select id="gd-fed" class="cs-sel">
-              <option value="">Select…</option><option value="hawkish">Hawkish</option><option value="neutral">Neutral</option><option value="dovish">Dovish</option>
-            </select>
-          </div>
-          <div>
-            <div class="cfs-sub" style="margin-bottom:5px">Risk Sentiment</div>
-            <select id="gd-risk" class="cs-sel">
-              <option value="">Select…</option><option value="risk-on">Risk-On</option><option value="neutral">Neutral</option><option value="risk-off">Risk-Off</option>
-            </select>
-          </div>
+        <div class="cfs-sub" style="margin-bottom:14px">Set all 5 macro drivers to generate your Gold bias</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+          <div><div class="cfs-sub" style="margin-bottom:5px">USD Strength</div>
+            <select id="gd-usd-strength" class="cs-sel"><option value="">Select…</option><option value="strong">Strong</option><option value="neutral">Neutral</option><option value="weak">Weak</option></select></div>
+          <div><div class="cfs-sub" style="margin-bottom:5px">Bond Yields</div>
+            <select id="gd-yields" class="cs-sel"><option value="">Select…</option><option value="rising">Rising</option><option value="flat">Flat</option><option value="falling">Falling</option></select></div>
+          <div><div class="cfs-sub" style="margin-bottom:5px">Fed Stance</div>
+            <select id="gd-fed" class="cs-sel"><option value="">Select…</option><option value="hawkish">Hawkish</option><option value="neutral">Neutral</option><option value="dovish">Dovish</option></select></div>
+          <div><div class="cfs-sub" style="margin-bottom:5px">Risk Sentiment</div>
+            <select id="gd-risk" class="cs-sel"><option value="">Select…</option><option value="risk-on">Risk-On</option><option value="neutral">Neutral</option><option value="risk-off">Risk-Off</option></select></div>
         </div>
-        <div style="margin-bottom:12px">
-          <div class="cfs-sub" style="margin-bottom:5px">Inflation Expectations</div>
-          <select id="gd-inflation" class="cs-sel" style="width:100%">
-            <option value="">Select…</option><option value="rising">Rising (above 2%)</option><option value="stable">Stable (near 2%)</option><option value="falling">Falling (below 2%)</option>
-          </select>
-        </div>
+        <div style="margin-bottom:12px"><div class="cfs-sub" style="margin-bottom:5px">Inflation Expectations</div>
+          <select id="gd-inflation" class="cs-sel" style="width:100%"><option value="">Select…</option><option value="rising">Rising (above 2%)</option><option value="stable">Stable (near 2%)</option><option value="falling">Falling (below 2%)</option></select></div>
         <button class="btn-primary" onclick="runGoldBiasEngine()">⚡ Generate Gold Bias</button>
         <div id="gd-bias-result" style="display:none;margin-top:14px"></div>
       </div>
@@ -1047,18 +1019,10 @@
       <div class="cfs-card">
         <div class="cfs-header"><span class="cfs-icon">📌</span><span class="cfs-title">Why Gold Moved Today</span></div>
         <div class="cfs-sub" style="margin-bottom:14px">Identify the macro narrative behind today's price action</div>
-        <div style="margin-bottom:10px">
-          <div class="cfs-sub" style="margin-bottom:5px">Direction Today</div>
-          <select id="gd-moved-direction" class="cs-sel" style="width:100%">
-            <option value="">Select…</option><option value="rallied">Gold Rallied</option><option value="sold-off">Gold Sold Off</option><option value="ranging">Gold Ranging</option>
-          </select>
-        </div>
-        <div style="margin-bottom:12px">
-          <div class="cfs-sub" style="margin-bottom:5px">Key Driver</div>
-          <select id="gd-moved-driver" class="cs-sel" style="width:100%">
-            <option value="">Select…</option><option value="cpi">CPI / Inflation</option><option value="nfp">NFP / Jobs</option><option value="fomc">FOMC / Fed</option><option value="geopolitical">Geopolitical Risk</option><option value="yields">Bond Yields</option><option value="usd">USD Strength</option>
-          </select>
-        </div>
+        <div style="margin-bottom:10px"><div class="cfs-sub" style="margin-bottom:5px">Direction Today</div>
+          <select id="gd-moved-direction" class="cs-sel" style="width:100%"><option value="">Select…</option><option value="rallied">Gold Rallied</option><option value="sold-off">Gold Sold Off</option><option value="ranging">Gold Ranging</option></select></div>
+        <div style="margin-bottom:12px"><div class="cfs-sub" style="margin-bottom:5px">Key Driver</div>
+          <select id="gd-moved-driver" class="cs-sel" style="width:100%"><option value="">Select…</option><option value="cpi">CPI / Inflation</option><option value="nfp">NFP / Jobs</option><option value="fomc">FOMC / Fed</option><option value="geopolitical">Geopolitical Risk</option><option value="yields">Bond Yields</option><option value="usd">USD Strength</option></select></div>
         <button class="btn-primary" onclick="runWhyGoldMoved()">📌 Explain the Move</button>
         <div id="gd-moved-result" style="display:none;margin-top:14px"></div>
       </div>
@@ -1067,18 +1031,10 @@
       <div class="cfs-card">
         <div class="cfs-header"><span class="cfs-icon">📰</span><span class="cfs-title">Gold News Interpreter</span></div>
         <div class="cfs-sub" style="margin-bottom:14px">Predict Gold's reaction to economic events</div>
-        <div style="margin-bottom:10px">
-          <div class="cfs-sub" style="margin-bottom:5px">News Event</div>
-          <select id="gd-news-event" class="cs-sel" style="width:100%">
-            <option value="">Select event…</option><option value="cpi">CPI (Inflation Report)</option><option value="nfp">NFP (Non-Farm Payrolls)</option><option value="fomc">FOMC Rate Decision</option><option value="employment">Employment Change</option><option value="gdp">GDP Report</option>
-          </select>
-        </div>
-        <div style="margin-bottom:12px">
-          <div class="cfs-sub" style="margin-bottom:5px">Outcome vs Forecast</div>
-          <select id="gd-news-outcome" class="cs-sel" style="width:100%">
-            <option value="">Select outcome…</option><option value="better">Better than expected</option><option value="worse">Worse than expected</option><option value="inline">Inline with forecast</option><option value="hike">Rate Hike</option><option value="cut">Rate Cut</option><option value="hold">Hold (no change)</option>
-          </select>
-        </div>
+        <div style="margin-bottom:10px"><div class="cfs-sub" style="margin-bottom:5px">News Event</div>
+          <select id="gd-news-event" class="cs-sel" style="width:100%"><option value="">Select event…</option><option value="cpi">CPI (Inflation Report)</option><option value="nfp">NFP (Non-Farm Payrolls)</option><option value="fomc">FOMC Rate Decision</option><option value="employment">Employment Change</option><option value="gdp">GDP Report</option></select></div>
+        <div style="margin-bottom:12px"><div class="cfs-sub" style="margin-bottom:5px">Outcome vs Forecast</div>
+          <select id="gd-news-outcome" class="cs-sel" style="width:100%"><option value="">Select outcome…</option><option value="better">Better than expected</option><option value="worse">Worse than expected</option><option value="inline">Inline with forecast</option><option value="hike">Rate Hike</option><option value="cut">Rate Cut</option><option value="hold">Hold (no change)</option></select></div>
         <button class="btn-primary" onclick="runGoldNewsInterpreter()">⚡ Predict Gold Reaction</button>
         <div id="gd-news-result" style="display:none;margin-top:14px"></div>
       </div>
@@ -1147,9 +1103,6 @@
 
   </div><!-- /app-body -->
 
-  <!-- Psychology fullscreen overlay -->
-  <div id="psychology-wrapper" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:100;background:#080c14;overflow-y:auto"></div>
-
   <!-- Bottom nav (5 items to match screenshot) -->
   <nav class="bottom-nav">
     <button class="nav-btn active" data-page="dashboard" onclick="goPage('dashboard')">
@@ -1169,9 +1122,6 @@
     </button>
     <button class="nav-btn" data-page="gold" onclick="goPage('gold')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>Gold
-    </button>
-    <button class="nav-btn" data-psych-btn="1" onclick="showPsychologyApp()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a5 5 0 0 1 10 0v1.662"/></svg>Psychology
     </button>
     <button class="nav-btn" data-page="settings" onclick="goPage('settings')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Settings
