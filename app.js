@@ -275,9 +275,7 @@ function _launchApp() {
   fetchAndInjectMacroData();
   // [SESSION 2 - TASK 3] Auto-load news sentiment
   fetchAndInjectNewsSentiment();
-  // Psychology + Session Timer + Gold sessions
-  _addPsychologyNavButton();
-  _loadPsychologyState();
+  // Session Timer + Gold sessions
   _startSessionTimer();
   _renderGoldSessions();
 }
@@ -575,8 +573,7 @@ const RISK_SENSITIVITY = {
   GBP: { 'risk-on': +0.5, 'risk-off': -0.5 },
   USD: { 'risk-on': -0.5, 'risk-off': +1.5 },
   JPY: { 'risk-on': -1.5, 'risk-off': +2.0 },
-  CHF: { 'risk-on': -1.0, 'risk-off': +1.5 },
-  XAU: { 'risk-on': -0.5, 'risk-off': +2.0 }  // gold = safe haven
+  CHF: { 'risk-on': -1.0, 'risk-off': +1.5 }
 };
 
 /**
@@ -586,7 +583,7 @@ const RISK_SENSITIVITY = {
  * applies risk-sentiment adjustment, sorts and renders.
  */
 function runCurrencyAnalysis() {
-   const currencies = ['USD','EUR','GBP','JPY','AUD','NZD','CAD','CHF','XAU'];
+   const currencies = ['USD','EUR','GBP','JPY','AUD','NZD','CAD','CHF'];
   const globalRisk = document.getElementById('cs-global-risk')?.value || '';
 
   const scored = currencies.map(c => {
@@ -602,15 +599,6 @@ function runCurrencyAnalysis() {
 
     // [SESSION 2 - TASK 3] News bias nudge (0.5 weight — never overrides fundamentals)
     score += (window.NEWS_BIAS?.[c] || 0) * 0.5;
-
-    // XAU override — gold driven by rate direction + risk sentiment only
-    if (c === 'XAU') {
-      score = 0;
-      if (data.rate === 'bullish') score += 3;   // rising gold price
-      if (data.rate === 'bearish') score -= 3;
-      if (data.cpi === 'rising')   score += 2;   // inflation = gold bid
-      if (data.cpi === 'falling')  score -= 1;
-    }
 
     // Apply risk-sentiment layer
     if (globalRisk && RISK_SENSITIVITY[c]) {
@@ -856,126 +844,6 @@ function renderTradeSuggestions(rankings) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   EXECUTION INTELLIGENCE
-   ═══════════════════════════════════════════════════════════ */
-function generateTopTradePlan() {
-  const rankings = S.rankings || [];
-  const insightEl = document.getElementById('trade-insight');
-  const planEl    = document.getElementById('trade-plan');
-
-  if (!rankings.length) {
-    if (insightEl) insightEl.innerHTML = '<p style="color:#ff4560;font-size:13px">⚠️ Run Currency Analysis first to generate a trade plan.</p>';
-    return;
-  }
-
-  const strongest = rankings[0];
-  const weakest   = rankings[rankings.length - 1];
-  const second    = rankings[1];
-  const secondW   = rankings[rankings.length - 2];
-
-  // Trade insight
-  if (insightEl) {
-    insightEl.innerHTML = `
-      <div style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:14px;margin-bottom:8px">
-        <div style="font-size:11px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Market Insight</div>
-        <div style="font-size:13px;color:#eef2ff;line-height:1.6">
-          <strong style="color:#e4ae2a">${strongest.currency}</strong> is the strongest currency (score: ${strongest.score > 0 ? '+' : ''}${strongest.score}).
-          <strong style="color:#ff4560">${weakest.currency}</strong> is the weakest (score: ${weakest.score}).
-          The highest divergence pair is <strong style="color:#00d4a1">${strongest.currency}/${weakest.currency}</strong> with a spread of ${(strongest.score - weakest.score).toFixed(1)} points.
-        </div>
-      </div>`;
-  }
-
-  // Structured trade plan
-  if (planEl) {
-    const col1 = '#00d4a1';
-    const col2 = '#e4ae2a';
-    planEl.innerHTML = `
-      <div style="background:#10172a;border:1px solid rgba(0,212,161,.2);border-radius:10px;padding:14px;margin-bottom:8px">
-        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">🥇 Primary Setup</div>
-        <div style="font-size:18px;font-weight:900;color:${col1};margin-bottom:4px">BUY ${strongest.currency}/${weakest.currency}</div>
-        <div style="font-size:12px;color:#5a6a8a;line-height:1.6">
-          ✓ ${strongest.currency} strong (${strongest.score > 0 ? '+' : ''}${strongest.score}) vs ${weakest.currency} weak (${weakest.score})<br>
-          ✓ Confirm on H4 chart — look for BOS or structure break<br>
-          ✓ Enter on retest of key support / demand zone<br>
-          ✓ Stop Loss: below structure / recent swing low<br>
-          ✓ Target: minimum 1:2 Risk:Reward
-        </div>
-      </div>
-      <div style="background:#10172a;border:1px solid rgba(228,174,42,.15);border-radius:10px;padding:14px;margin-bottom:8px">
-        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">🥈 Secondary Setup</div>
-        <div style="font-size:16px;font-weight:900;color:${col2};margin-bottom:4px">BUY ${second?.currency || '—'}/${secondW?.currency || '—'}</div>
-        <div style="font-size:12px;color:#5a6a8a;line-height:1.6">
-          ✓ Second strongest vs second weakest divergence<br>
-          ✓ Trade only if primary setup is not available<br>
-          ✓ Same entry rules apply — structure + zone confirmation
-        </div>
-      </div>
-      <div style="background:#10172a;border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px">
-        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">⚠️ Risk Management Rules</div>
-        <div style="font-size:12px;color:#5a6a8a;line-height:1.8">
-          • Max risk per trade: 1–2% of account<br>
-          • No trading 30 min before/after high-impact news<br>
-          • Trade during London or NY session only<br>
-          • Cancel setup if market structure changes
-        </div>
-      </div>`;
-  }
-  _toast('Trade plan generated ✓', 'success');
-}
-
-/* ═══════════════════════════════════════════════════════════
-   NEWS DECISION ENGINE
-   ═══════════════════════════════════════════════════════════ */
-function analyzeNewsImpact() {
-  const currency = document.getElementById('news-currency')?.value || 'USD';
-  const event    = document.getElementById('news-event')?.value    || 'cpi';
-  const outcome  = document.getElementById('news-outcome')?.value  || 'better';
-  const el       = document.getElementById('news-impact');
-  if (!el) return;
-
-  // Matrix: [event][outcome] → { bias, reason, action }
-  const matrix = {
-    cpi: {
-      better: { bias: 'BULLISH', cur: currency, reason: `Higher-than-expected CPI → rate hike expectations rise → ${currency} strengthens`, action: `BUY ${currency} pairs. Look for ${currency}JPY, ${currency}CHF longs.` },
-      worse:  { bias: 'BEARISH', cur: currency, reason: `Lower-than-expected CPI → rate cut expectations rise → ${currency} weakens`,    action: `SELL ${currency} pairs. Look for EUR${currency}, GBP${currency} longs.` }
-    },
-    rate: {
-      better: { bias: 'BULLISH', cur: currency, reason: `Rate hike or hawkish surprise → immediate ${currency} strength`, action: `BUY ${currency} on the spike. Wait for retest before entry.` },
-      worse:  { bias: 'BEARISH', cur: currency, reason: `Rate cut or dovish surprise → immediate ${currency} weakness`,  action: `SELL ${currency} on the spike. Wait for retest before entry.` }
-    },
-    nfp: {
-      better: { bias: 'BULLISH', cur: currency, reason: `Strong employment → economy strong → Fed less likely to cut → ${currency} bid`,  action: `BUY ${currency}. EURUSD sell, GBPUSD sell if USD.` },
-      worse:  { bias: 'BEARISH', cur: currency, reason: `Weak employment → economy slowing → rate cut pressure → ${currency} offered`, action: `SELL ${currency}. EURUSD buy, GBPUSD buy if USD.` }
-    },
-    gdp: {
-      better: { bias: 'BULLISH', cur: currency, reason: `Strong GDP → economic growth → rate hike bets increase → ${currency} stronger`, action: `BUY ${currency} pairs on pullbacks.` },
-      worse:  { bias: 'BEARISH', cur: currency, reason: `Weak GDP → economic slowdown → rate cut expected → ${currency} weaker`,         action: `SELL ${currency} pairs on pullbacks.` }
-    }
-  };
-
-  const result = matrix[event]?.[outcome];
-  if (!result) { el.innerHTML = '<p style="color:#5a6a8a">No data for this combination.</p>'; return; }
-
-  const col    = result.bias === 'BULLISH' ? '#00d4a1' : '#ff4560';
-  const arrow  = result.bias === 'BULLISH' ? '↑' : '↓';
-
-  el.innerHTML = `
-    <div style="background:#10172a;border:1px solid ${col}30;border-radius:10px;padding:14px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <div style="width:36px;height:36px;border-radius:8px;background:${col}18;border:1px solid ${col}40;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:${col}">${arrow}</div>
-        <div>
-          <div style="font-size:16px;font-weight:900;color:${col}">${result.bias} ${result.cur}</div>
-          <div style="font-size:11px;color:#5a6a8a">Based on ${event.toUpperCase()} ${outcome === 'better' ? 'beat' : 'miss'}</div>
-        </div>
-      </div>
-      <div style="font-size:12px;color:#7a8eb0;line-height:1.6;margin-bottom:10px;padding:10px;background:#141e33;border-radius:8px">${result.reason}</div>
-      <div style="font-size:11px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Suggested Action</div>
-      <div style="font-size:13px;color:#eef2ff;font-weight:600">${result.action}</div>
-    </div>`;
-}
-
-/* ═══════════════════════════════════════════════════════════
    RISK CALCULATOR — [N9]
    Formula per prompt spec:
      pipDistance = |entry − stopLoss| × 10000
@@ -1160,182 +1028,103 @@ function _fbErr(code) {
   return m[code] || 'Something went wrong. Please try again.';
 }
 /* ═══════════════════════════════════════════════════════════════
-   PSYCHOLOGY BOOTCAMP — added cleanly, no overwrites
+   EXECUTION INTELLIGENCE
    ═══════════════════════════════════════════════════════════════ */
-
-function _loadPsychologyState() {
-  if (!S.user) return;
-  try {
-    const saved = JSON.parse(localStorage.getItem('tes_psych_' + S.user.uid));
-    if (saved) S.psychologyState = { ...S.psychologyState, ...saved };
-  } catch (e) {}
-}
-
-function _savePsychologyState() {
-  if (!S.user) return;
-  try { localStorage.setItem('tes_psych_' + S.user.uid, JSON.stringify(S.psychologyState)); }
-  catch (e) {}
-}
-
-function showPsychologyApp() {
-  document.getElementById('screen-app').style.display = 'none';
-  const w = document.getElementById('psychology-wrapper');
-  if (w) w.style.display = 'block';
-  _loadPsychologyState();
-  _renderPsychologyHub();
-}
-
-function returnToTesPro() {
-  _savePsychologyState();
-  const w = document.getElementById('psychology-wrapper');
-  if (w) w.style.display = 'none';
-  document.getElementById('screen-app').style.display = 'block';
-}
-
-function _addPsychologyNavButton() {
-  const nav = document.querySelector('.bottom-nav');
-  if (!nav || nav.querySelector('[data-psych-btn]')) return;
-  const btn = document.createElement('button');
-  btn.className = 'nav-btn';
-  btn.setAttribute('data-psych-btn', '1');
-  btn.onclick = showPsychologyApp;
-  btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a5 5 0 0 1 10 0v1.662"/></svg>Psychology';
-  nav.appendChild(btn);
-}
-
-function _getPsychologyRank(xp) {
-  if (xp >= 1500) return 'ELITE OPERATOR';
-  if (xp >= 900)  return 'SERGEANT';
-  if (xp >= 500)  return 'CORPORAL';
-  if (xp >= 200)  return 'PRIVATE';
-  return 'RECRUIT';
-}
-
-function _getPsychologyProgress(xp) {
-  return Math.min((xp / 2000) * 100, 100).toFixed(1);
-}
-
-function _renderPsychologyHub() {
-  const wrapper = document.getElementById('psychology-wrapper');
-  if (!wrapper) return;
-  const ps = S.psychologyState;
-  const rank = _getPsychologyRank(ps.xp);
-  wrapper.innerHTML = `
-    <div style="max-width:660px;margin:0 auto;padding:20px 16px 100px;min-height:100vh">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:24px 0 16px;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:20px">
-        <div>
-          <div style="font-size:10px;color:#00ff88;letter-spacing:3px;margin-bottom:4px;font-weight:700;text-transform:uppercase">◈ ${rank}</div>
-          <div style="font-size:18px;font-weight:900;color:#eef2ff;letter-spacing:2px">TRADING PSYCH BOOTCAMP</div>
-          <div style="font-size:10px;color:#5a6a8a;margin-top:2px;letter-spacing:1px">Trading in the Zone · Mark Douglas</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-size:18px;color:#e4ae2a;font-weight:700;margin-bottom:4px">⚡ ${ps.xp} XP</div>
-          <div style="font-size:11px;color:#ff6644;margin-bottom:10px">🔥 ${ps.streak} day streak</div>
-          <button onclick="returnToTesPro()" style="background:transparent;border:1px solid #ff4466;color:#ff4466;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:1px">← TES PRO</button>
-        </div>
-      </div>
-      <div style="height:4px;background:rgba(255,255,255,.07);border-radius:2px;overflow:hidden;margin-bottom:16px">
-        <div style="height:100%;width:${_getPsychologyProgress(ps.xp)}%;background:linear-gradient(90deg,#00ff88,#00ccff);border-radius:2px;transition:width .6s"></div>
-      </div>
-      <div style="display:flex;gap:8px;margin-bottom:20px">
-        ${[['discipline','#00ff88'],['emotion','#00ccff'],['execution','#cc44ff']].map(([k,c])=>`
-        <div style="flex:1;background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:10px 8px;text-align:center">
-          <div style="font-size:22px;font-weight:900;color:${c};margin-bottom:3px">${ps.scores[k]}</div>
-          <div style="font-size:9px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.7px">${k}</div>
-        </div>`).join('')}
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">
-        ${[['⚔️','LEVELS','5 Levels','levels'],['🎯','SCENARIOS','Trade Drills','scenarios'],['📋','MISSIONS','Daily','missions'],['🧬','ARCHETYPE','Profile','archetypes']].map(([icon,label,sub,screen])=>`
-        <button onclick="_showPsychologyScreen('${screen}')" style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:14px 12px;cursor:pointer;text-align:left;transition:all .2s">
-          <div style="font-size:20px;margin-bottom:6px">${icon}</div>
-          <div style="font-size:13px;font-weight:700;color:#eef2ff;letter-spacing:1px;margin-bottom:2px">${label}</div>
-          <div style="font-size:10px;color:#5a6a8a">${sub}</div>
-        </button>`).join('')}
-      </div>
-      <div style="background:#141e33;border:1px solid rgba(255,255,255,.07);border-left:3px solid rgba(228,174,42,.5);border-radius:8px;padding:16px 18px">
-        <div style="font-size:14px;line-height:1.6;color:#5a6a8a;font-style:italic;margin-bottom:4px">"The consistency you seek is in your mind, not in the markets."</div>
-        <div style="font-size:12px;color:#3a4a66">— Mark Douglas</div>
-      </div>
-    </div>`;
-}
-
-function _showPsychologyScreen(screen) {
-  const wrapper = document.getElementById('psychology-wrapper');
-  if (!wrapper) return;
-  const ps = S.psychologyState;
-  const backBtn = `<button onclick="_renderPsychologyHub()" style="position:fixed;top:20px;right:16px;z-index:10;background:transparent;border:1px solid #ff4466;color:#ff4466;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700">← BACK</button>`;
-  const wrap = (title, content) => `<div style="max-width:660px;margin:0 auto;padding:20px 16px 100px">${backBtn}<div style="padding-top:40px"><div style="font-size:18px;font-weight:900;color:#eef2ff;letter-spacing:2px;margin-bottom:20px">${title}</div>${content}</div></div>`;
-  const card = (content) => `<div style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:16px;margin-bottom:12px">${content}</div>`;
-
-  if (screen === 'levels') {
-    const levels = [
-      ['🥉','LEVEL 1: AWARENESS','#00ff88',0,'Recognize your emotional patterns. Identify triggers that make you deviate from your plan.',50],
-      ['🥈','LEVEL 2: MASTERY','#00ccff',100,'Develop discipline techniques. Stick to your trading plan even when emotions run high.',100],
-      ['🥇','LEVEL 3: CONSISTENCY','#ff9944',300,'Execute with absolute consistency. No hesitation, no second-guessing.',150],
-      ['💎','LEVEL 4: ZONE','#cc44ff',600,'Enter the Trading Zone. Pure execution where emotions don\'t interfere.',200],
-      ['👑','LEVEL 5: ELITE','#e4ae2a',1000,'Complete mastery. Trading psychology under any market condition.',300],
-    ];
-    wrapper.innerHTML = wrap('⚔️ LEVELS', levels.map(([icon,name,color,req,desc,reward])=>card(`
-      <div style="font-size:14px;font-weight:900;color:${color};margin-bottom:8px">${icon} ${name}</div>
-      <div style="font-size:12px;color:#5a6a8a;line-height:1.6;margin-bottom:8px">${desc}</div>
-      <div style="font-size:11px;color:${ps.xp>=req?color:'#3a4a66'}">${ps.xp>=req?'✓ Unlocked':'🔒 Reach '+req+' XP'} · Reward: +${reward} XP</div>
-    `)).join(''));
-  } else if (screen === 'scenarios') {
-    const scenarios = [
-      ['The Breakeven Close','Your trade just hit breakeven. 2 hours to market close. What do you do?','Close and move on','✓ Correct! Lock in discipline. Breakeven is +0R, still disciplined execution.','Hold for bigger target','✗ Risky: No new setup = no reason to hold. This is hope, not a plan.','discipline'],
-      ['The Revenge Trade','You just took a loss. Another setup forms immediately. Impulse is strong. What do you do?','Wait and process the loss first','✓ Correct! Discipline over emotion. Wait at least 30 minutes before re-entering.','Jump in immediately','✗ Revenge trading. You\'re trading your emotions, not the market.','emotion'],
-      ['The FOMO Trade','Market is rallying. Everyone\'s talking about it. No setup. Fear of missing out is high. What do you do?','Stay disciplined — wait for your setup','✓ Correct! No setup = No trade. The next bus always comes.','Chase the move','✗ Chasing tops is how traders get stopped out at the worst price.','discipline'],
-    ];
-    wrapper.innerHTML = wrap('🎯 SCENARIOS', scenarios.map(([title,q,aGood,aGoodResult,aBad,aBadResult,skill])=>card(`
-      <div style="font-size:13px;font-weight:900;color:#eef2ff;margin-bottom:8px">${title}</div>
-      <div style="font-size:12px;color:#5a6a8a;margin-bottom:12px;line-height:1.6">${q}</div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <button style="background:rgba(0,212,161,.1);border:1px solid rgba(0,212,161,.3);color:#00d4a1;padding:10px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;text-align:left"
-          onclick="_toast('${aGoodResult}','success');S.psychologyState.xp+=20;S.psychologyState.scores.${skill}+=5;_savePsychologyState()">✅ ${aGood}</button>
-        <button style="background:rgba(255,69,96,.1);border:1px solid rgba(255,69,96,.3);color:#ff4560;padding:10px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;text-align:left"
-          onclick="_toast('${aBadResult}','warning')">❌ ${aBad}</button>
-      </div>
-    `)).join(''));
-  } else if (screen === 'missions') {
-    const missions = [
-      ['📖','Read Psychology Chapter','10 min read on discipline',30,'discipline',5],
-      ['✅','Complete Pre-Trade Checklist','Use TES PRO checklist today',40,'discipline',10],
-      ['📊','Journal Your Trade','Log at least 1 trade',35,'execution',5],
-      ['💭','Reflect on a Mistake','Write 1 lesson from a loss',25,'emotion',5],
-      ['🎯','No Revenge Trades Today','Maintain discipline all session',50,'discipline',15],
-    ];
-    wrapper.innerHTML = wrap('📋 DAILY MISSIONS', missions.map(([icon,title,sub,xp,skill,pts])=>card(`
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-        <div>
-          <div style="font-size:13px;font-weight:700;color:#eef2ff;margin-bottom:2px">${icon} ${title}</div>
-          <div style="font-size:11px;color:#5a6a8a">${sub} · +${xp} XP</div>
-        </div>
-        <button style="background:#e4ae2a;color:#000;padding:8px 16px;border:none;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;flex-shrink:0;white-space:nowrap"
-          onclick="this.disabled=true;this.textContent='✓ Done';_toast('+${xp} XP earned!','success');S.psychologyState.xp+=${xp};S.psychologyState.scores.${skill}+=${pts};_savePsychologyState()">Complete</button>
-      </div>
-    `)).join(''));
-  } else if (screen === 'archetypes') {
-    const archetypes = [
-      ['🦁','THE DISCIPLINARIAN','#00ff88','rgba(0,255,136,.1)','rgba(0,255,136,.3)','Follows the plan religiously. Never revenge trades. Takes losses without emotion. If you\'re here — you\'re winning.','discipline',10],
-      ['🔥','THE EMOTIONAL TRADER','#00ccff','rgba(0,204,255,.1)','rgba(0,204,255,.3)','Makes decisions based on feelings. Takes losses hard. Revenge trades are your weakness. Work on emotional control.','emotion',10],
-      ['⚡','THE IMPULSIVE TRADER','#cc44ff','rgba(204,68,255,.1)','rgba(204,68,255,.3)','Enters without a plan. Chases moves. FOMO is your biggest enemy. Master patience and setup confirmation.','execution',10],
-    ];
-    wrapper.innerHTML = wrap('🧬 TRADER ARCHETYPES', archetypes.map(([icon,name,color,bg,border,desc,skill,pts])=>card(`
-      <div style="font-size:14px;font-weight:900;color:${color};margin-bottom:8px">${icon} ${name}</div>
-      <div style="font-size:12px;color:#5a6a8a;line-height:1.6;margin-bottom:10px">${desc}</div>
-      <button style="width:100%;background:${bg};border:1px solid ${border};color:${color};padding:10px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer"
-        onclick="_toast('Profile selected! +15 XP','success');S.psychologyState.xp+=15;S.psychologyState.scores.${skill}+=${pts};_savePsychologyState()">This is me → +15 XP</button>
-    `)).join(''));
+function generateTopTradePlan() {
+  const rankings  = S.rankings || [];
+  const insightEl = document.getElementById('trade-insight');
+  const planEl    = document.getElementById('trade-plan');
+  if (!rankings.length) {
+    if (insightEl) insightEl.innerHTML = '<p style="color:#ff4560;font-size:13px">⚠️ Run Currency Analysis first.</p>';
+    return;
   }
+  const strongest = rankings[0];
+  const weakest   = rankings[rankings.length - 1];
+  const second    = rankings[1];
+  const secondW   = rankings[rankings.length - 2];
+  if (insightEl) {
+    insightEl.innerHTML = `
+      <div style="background:#10172a;border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:14px;margin-bottom:8px">
+        <div style="font-size:11px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Market Insight</div>
+        <div style="font-size:13px;color:#eef2ff;line-height:1.6">
+          <strong style="color:#e4ae2a">${strongest.currency}</strong> is the strongest currency (score: ${strongest.score > 0 ? '+' : ''}${strongest.score}).
+          <strong style="color:#ff4560">${weakest.currency}</strong> is the weakest (score: ${weakest.score}).
+          Highest divergence: <strong style="color:#00d4a1">${strongest.currency}/${weakest.currency}</strong> — spread of ${(strongest.score - weakest.score).toFixed(1)} pts.
+        </div>
+      </div>`;
+  }
+  if (planEl) {
+    planEl.innerHTML = `
+      <div style="background:#10172a;border:1px solid rgba(0,212,161,.2);border-radius:10px;padding:14px;margin-bottom:8px">
+        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">🥇 Primary Setup</div>
+        <div style="font-size:18px;font-weight:900;color:#00d4a1;margin-bottom:4px">BUY ${strongest.currency} / SELL ${weakest.currency}</div>
+        <div style="font-size:12px;color:#5a6a8a;line-height:1.8">
+          ✓ Confirm on H4 — look for BOS or structure break<br>
+          ✓ Enter on retest of key demand zone<br>
+          ✓ Stop Loss: below structure / recent swing low<br>
+          ✓ Target: minimum 1:2 Risk:Reward
+        </div>
+      </div>
+      <div style="background:#10172a;border:1px solid rgba(228,174,42,.15);border-radius:10px;padding:14px;margin-bottom:8px">
+        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">🥈 Secondary Setup</div>
+        <div style="font-size:16px;font-weight:900;color:#e4ae2a;margin-bottom:4px">BUY ${second?.currency || '—'} / SELL ${secondW?.currency || '—'}</div>
+        <div style="font-size:12px;color:#5a6a8a;line-height:1.6">Trade only if primary setup unavailable. Same entry rules apply.</div>
+      </div>
+      <div style="background:#10172a;border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:14px">
+        <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">⚠️ Risk Rules</div>
+        <div style="font-size:12px;color:#5a6a8a;line-height:1.8">
+          • Max 1–2% risk per trade<br>
+          • No trading 30min before/after high-impact news<br>
+          • London or NY session only<br>
+          • Cancel if market structure changes
+        </div>
+      </div>`;
+  }
+  _toast('Trade plan generated ✓', 'success');
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   GOLD DESK — XAUUSD complete engine
+   NEWS DECISION ENGINE
    ═══════════════════════════════════════════════════════════════ */
-
-function _initGoldPage() {
-  _renderGoldSessions();
+function analyzeNewsImpact() {
+  const currency = document.getElementById('news-currency')?.value || 'USD';
+  const event    = document.getElementById('news-event')?.value    || 'cpi';
+  const outcome  = document.getElementById('news-outcome')?.value  || 'better';
+  const el       = document.getElementById('news-impact');
+  if (!el) return;
+  const matrix = {
+    cpi:  { better: { bias:'BULLISH', reason:`Higher CPI → rate hike expectations → ${currency} strengthens`,      action:`BUY ${currency} pairs. Look for ${currency}JPY, ${currency}CHF longs.` },
+                worse:  { bias:'BEARISH', reason:`Lower CPI → rate cut expectations → ${currency} weakens`,           action:`SELL ${currency} pairs. EUR${currency}, GBP${currency} longs.` } },
+    rate: { better: { bias:'BULLISH', reason:`Rate hike/hawkish surprise → immediate ${currency} strength`,          action:`BUY ${currency} on spike. Wait for retest.` },
+                worse:  { bias:'BEARISH', reason:`Rate cut/dovish surprise → immediate ${currency} weakness`,          action:`SELL ${currency} on spike. Wait for retest.` } },
+    nfp:  { better: { bias:'BULLISH', reason:`Strong employment → economy strong → Fed less likely to cut → ${currency} bid`, action:`BUY ${currency}. EURUSD sell, GBPUSD sell if USD.` },
+                worse:  { bias:'BEARISH', reason:`Weak employment → slowdown → rate cut pressure → ${currency} offered`, action:`SELL ${currency}. EURUSD buy, GBPUSD buy if USD.` } },
+    gdp:  { better: { bias:'BULLISH', reason:`Strong GDP → growth → rate hike bets → ${currency} stronger`,          action:`BUY ${currency} pairs on pullbacks.` },
+                worse:  { bias:'BEARISH', reason:`Weak GDP → slowdown → rate cut expected → ${currency} weaker`,       action:`SELL ${currency} pairs on pullbacks.` } }
+  };
+  const result = matrix[event]?.[outcome];
+  if (!result) { el.innerHTML = '<p style="color:#5a6a8a">No data for this combination.</p>'; return; }
+  const col   = result.bias === 'BULLISH' ? '#00d4a1' : '#ff4560';
+  const arrow = result.bias === 'BULLISH' ? '↑' : '↓';
+  el.innerHTML = `
+    <div style="background:#10172a;border:1px solid ${col}30;border-radius:10px;padding:14px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="width:36px;height:36px;border-radius:8px;background:${col}18;border:1px solid ${col}40;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:${col}">${arrow}</div>
+        <div>
+          <div style="font-size:16px;font-weight:900;color:${col}">${result.bias} ${currency}</div>
+          <div style="font-size:11px;color:#5a6a8a">${event.toUpperCase()} ${outcome === 'better' ? 'beat' : 'miss'}</div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:#7a8eb0;line-height:1.6;margin-bottom:10px;padding:10px;background:#141e33;border-radius:8px">${result.reason}</div>
+      <div style="font-size:11px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Suggested Action</div>
+      <div style="font-size:13px;color:#eef2ff;font-weight:600">${result.action}</div>
+    </div>`;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   GOLD DESK — XAUUSD COMPLETE ENGINE
+   ═══════════════════════════════════════════════════════════════ */
+function _initGoldPage() { _renderGoldSessions(); }
 
 function runGoldBiasEngine() {
   const usd       = document.getElementById('gd-usd-strength')?.value || '';
@@ -1343,23 +1132,17 @@ function runGoldBiasEngine() {
   const fed       = document.getElementById('gd-fed')?.value          || '';
   const risk      = document.getElementById('gd-risk')?.value         || '';
   const inflation = document.getElementById('gd-inflation')?.value    || '';
-
-  if (!usd || !yields || !fed || !risk || !inflation) {
-    _toast('Select all 5 parameters first.', 'warning'); return;
-  }
-
+  if (!usd || !yields || !fed || !risk || !inflation) { _toast('Select all 5 parameters first.', 'warning'); return; }
   let score = 0;
   if (usd === 'strong') score -= 2; else if (usd === 'weak') score += 2;
   if (yields === 'rising') score -= 1.5; else if (yields === 'falling') score += 1.5;
   if (fed === 'hawkish') score -= 2; else if (fed === 'dovish') score += 2;
   if (risk === 'risk-on') score -= 1; else if (risk === 'risk-off') score += 2;
   if (inflation === 'rising') score += 1.5; else if (inflation === 'falling') score -= 1;
-
-  const bias  = score > 3 ? '🟢 BULLISH' : score < -3 ? '🔴 BEARISH' : '🟡 NEUTRAL';
-  const col   = score > 3 ? '#00d4a1'    : score < -3 ? '#ff4560'    : '#e4ae2a';
-  const conf  = Math.min(Math.abs(score) * 15, 95).toFixed(0);
-  const pos   = score > 3 ? 'LONG'       : score < -3 ? 'SHORT'      : 'WAIT';
-
+  const bias = score > 3 ? '🟢 BULLISH' : score < -3 ? '🔴 BEARISH' : '🟡 NEUTRAL';
+  const col  = score > 3 ? '#00d4a1'    : score < -3 ? '#ff4560'    : '#e4ae2a';
+  const conf = Math.min(Math.abs(score) * 15, 95).toFixed(0);
+  const pos  = score > 3 ? 'LONG'       : score < -3 ? 'SHORT'      : 'WAIT';
   const el = document.getElementById('gd-bias-result');
   if (!el) return;
   el.style.display = 'block';
@@ -1370,7 +1153,7 @@ function runGoldBiasEngine() {
       <div style="height:6px;background:#1c2840;border-radius:3px;overflow:hidden;margin-bottom:12px">
         <div style="height:100%;width:${conf}%;background:${col};border-radius:3px;transition:width .6s"></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
         <div style="background:#141e33;border-radius:8px;padding:12px;text-align:center">
           <div style="font-size:10px;color:#5a6a8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Position</div>
           <div style="font-size:18px;font-weight:900;color:${col}">${pos}</div>
@@ -1380,12 +1163,12 @@ function runGoldBiasEngine() {
           <div style="font-size:18px;font-weight:900;color:${col}">${conf}%</div>
         </div>
       </div>
-      <div style="margin-top:12px;padding:12px;background:#141e33;border-radius:8px;font-size:12px;color:#5a6a8a;line-height:1.6">
+      <div style="padding:12px;background:#141e33;border-radius:8px;font-size:12px;color:#5a6a8a;line-height:1.6">
         <strong style="color:#7a8eb0">Risk Management:</strong><br>
         • Entry: On ${pos==='LONG'?'breakout above':'breakdown below'} key level<br>
         • Stop: ${pos==='LONG'?'Below recent swing low':'Above recent swing high'}<br>
         • Target: Minimum 1:2 Risk:Reward<br>
-        • Session: Trade during London/NY overlap only
+        • Session: London/NY overlap only
       </div>
     </div>`;
 }
@@ -1394,23 +1177,21 @@ function runWhyGoldMoved() {
   const dir    = document.getElementById('gd-moved-direction')?.value || '';
   const driver = document.getElementById('gd-moved-driver')?.value   || '';
   if (!dir || !driver) { _toast('Select direction and driver.', 'warning'); return; }
-
   const narratives = {
     cpi:         'CPI data shifted rate hike expectations. Higher inflation → rate hike pressure → USD stronger → Gold weaker. Lower inflation = opposite.',
     nfp:         'NFP jobs data moved USD. Strong NFP = USD rally = Gold sold off. Weak NFP = safe haven bid into Gold.',
-    fomc:        'FOMC decision or Fed commentary changed rate outlook. Hawkish tone pressures Gold; dovish tone supports Gold.',
-    geopolitical:'Geopolitical risk triggered safe haven flows. Gold is the primary safe haven asset — uncertainty = buyers.',
+    fomc:        'FOMC decision changed rate outlook. Hawkish tone pressures Gold; dovish tone supports Gold.',
+    geopolitical:'Geopolitical risk triggered safe haven flows. Gold is the primary safe haven — uncertainty = buyers.',
     yields:      'US 10-year Treasury yield moved sharply. Rising yields = higher opportunity cost to hold Gold = sellers. Falling yields = Gold rallies.',
-    usd:         'DXY (Dollar Index) drove the move directly. Gold has a near-perfect inverse correlation with USD strength.'
+    usd:         'DXY drove the move directly. Gold has a near-perfect inverse correlation with USD strength.'
   };
-
   const moved = dir === 'rallied' ? 'Gold rallied' : dir === 'sold-off' ? 'Gold sold off' : 'Gold ranged';
   const el = document.getElementById('gd-moved-result');
   if (!el) return;
   el.style.display = 'block';
   el.innerHTML = `
     <div style="background:#10172a;border-left:3px solid #e4ae2a;border-radius:0 10px 10px 0;padding:14px;font-size:13px;color:#eef2ff;line-height:1.7">
-      <strong style="color:#e4ae2a">${moved}</strong> today because: ${narratives[driver] || 'market conditions shifted.'}
+      <strong style="color:#e4ae2a">${moved}</strong> because: ${narratives[driver] || 'market conditions shifted.'}
     </div>`;
 }
 
@@ -1418,15 +1199,13 @@ function runGoldNewsInterpreter() {
   const event   = document.getElementById('gd-news-event')?.value   || '';
   const outcome = document.getElementById('gd-news-outcome')?.value || '';
   if (!event || !outcome) { _toast('Select event and outcome.', 'warning'); return; }
-
   const reactions = {
-    cpi:        { better: '🔴 Gold DOWN — Higher inflation = rate hike odds = USD strength = Gold pressure', worse: '🟢 Gold UP — Lower inflation = rate cut odds = USD weakness = Gold rally', inline: '🟡 Neutral — In-line data rarely moves Gold significantly', hike: '🔴 Gold DOWN', cut: '🟢 Gold UP', hold: '🟡 Neutral' },
-    nfp:        { better: '🔴 Gold DOWN — Strong jobs = strong USD = Gold pressure', worse: '🟢 Gold UP — Weak jobs = safe haven bid = Gold rally', inline: '🟡 Neutral', hike: '🔴 Gold DOWN', cut: '🟢 Gold UP', hold: '🟡 Neutral' },
-    fomc:       { hike: '🔴 Gold DOWN — Rate hike = higher yields = USD rally = Gold sells off', cut: '🟢 Gold UP — Rate cut = lower yields = USD weakness = Gold rallies', hold: '🟡 Neutral — No change = Gold trades on other factors', better: '🔴 Gold DOWN', worse: '🟢 Gold UP', inline: '🟡 Neutral' },
-    employment: { better: '🔴 Gold DOWN — Strong employment = USD bid = Gold lower', worse: '🟢 Gold UP — Weak employment = safe haven demand', inline: '🟡 Neutral', hike: '🔴 Gold DOWN', cut: '🟢 Gold UP', hold: '🟡 Neutral' },
-    gdp:        { better: '🔴 Gold DOWN — Strong growth = rate hike expectations = USD strength', worse: '🟢 Gold UP — Weak growth = safe haven demand = Gold bid', inline: '🟡 Neutral', hike: '🔴 Gold DOWN', cut: '🟢 Gold UP', hold: '🟡 Neutral' }
+    cpi:        { better:'🔴 Gold DOWN — Higher inflation = rate hike odds = USD strength = Gold pressure', worse:'🟢 Gold UP — Lower inflation = rate cut odds = USD weakness = Gold rally', inline:'🟡 Neutral', hike:'🔴 Gold DOWN', cut:'🟢 Gold UP', hold:'🟡 Neutral' },
+    nfp:        { better:'🔴 Gold DOWN — Strong jobs = strong USD = Gold pressure', worse:'🟢 Gold UP — Weak jobs = safe haven bid = Gold rally', inline:'🟡 Neutral', hike:'🔴 Gold DOWN', cut:'🟢 Gold UP', hold:'🟡 Neutral' },
+    fomc:       { hike:'🔴 Gold DOWN — Rate hike = higher yields = USD rally = Gold sells off', cut:'🟢 Gold UP — Rate cut = lower yields = USD weakness = Gold rallies', hold:'🟡 Neutral — No change', better:'🔴 Gold DOWN', worse:'🟢 Gold UP', inline:'🟡 Neutral' },
+    employment: { better:'🔴 Gold DOWN — Strong employment = USD bid', worse:'🟢 Gold UP — Weak employment = safe haven demand', inline:'🟡 Neutral', hike:'🔴 Gold DOWN', cut:'🟢 Gold UP', hold:'🟡 Neutral' },
+    gdp:        { better:'🔴 Gold DOWN — Strong growth = rate hike expectations', worse:'🟢 Gold UP — Weak growth = safe haven demand', inline:'🟡 Neutral', hike:'🔴 Gold DOWN', cut:'🟢 Gold UP', hold:'🟡 Neutral' }
   };
-
   const reaction = reactions[event]?.[outcome] || '🟡 Neutral — Data impact unclear';
   const el = document.getElementById('gd-news-result');
   if (!el) return;
@@ -1441,12 +1220,11 @@ function runGoldNewsInterpreter() {
 function _renderGoldSessions() {
   const el = document.getElementById('gd-sessions-wrap');
   if (!el) return;
-  const now = new Date();
-  const utcH = now.getUTCHours();
+  const utcH = new Date().getUTCHours();
   const sessions = [
-    { name: 'Asian Session',    open: 0,  close: 9,  vol: 'Low',       tip: 'Tight ranges. Avoid unless scalping.' },
-    { name: 'London Session',   open: 8,  close: 17, vol: 'High',      tip: 'Strong directional moves. Best session for Gold.' },
-    { name: 'New York Session', open: 13, close: 22, vol: 'Very High', tip: 'Highest volatility. News events hit hardest here.' }
+    { name:'Asian Session',    open:0,  close:9,  vol:'Low',       tip:'Tight ranges. Avoid unless scalping.' },
+    { name:'London Session',   open:8,  close:17, vol:'High',      tip:'Strong directional moves. Best session for Gold.' },
+    { name:'New York Session', open:13, close:22, vol:'Very High', tip:'Highest volatility. News events hit hardest here.' }
   ];
   el.innerHTML = sessions.map(s => {
     const isOpen = utcH >= s.open && utcH < s.close;
@@ -1455,27 +1233,25 @@ function _renderGoldSessions() {
     return `<div style="background:${bg};border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:12px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
         <div style="font-size:13px;font-weight:700;color:#eef2ff">${s.name}</div>
-        <span style="font-size:10px;font-weight:800;padding:2px 9px;border-radius:20px;background:${col}20;color:${col};border:1px solid ${col}40">${isOpen ? '🟢 OPEN' : '⚫ CLOSED'} · ${s.vol}</span>
+        <span style="font-size:10px;font-weight:800;padding:2px 9px;border-radius:20px;background:${col}20;color:${col};border:1px solid ${col}40">${isOpen?'🟢 OPEN':'⚫ CLOSED'} · ${s.vol}</span>
       </div>
-      <div style="font-size:11px;color:#5a6a8a">${s.open}:00–${s.close}:00 GMT &nbsp;·&nbsp; ${s.tip}</div>
+      <div style="font-size:11px;color:#5a6a8a">${s.open}:00–${s.close}:00 GMT · ${s.tip}</div>
     </div>`;
   }).join('');
-
   const advice = document.getElementById('gd-session-advice');
   if (advice) advice.textContent = '💡 Peak liquidity: London/NY overlap 13:00–17:00 GMT. Best time to trade XAUUSD.';
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   SESSION TIMER — Trading session status on dashboard
+   SESSION TIMER
    ═══════════════════════════════════════════════════════════════ */
-
 function _startSessionTimer() {
   const el = document.getElementById('session-timer-card');
   if (!el) return;
   const sessions = [
-    { name: 'Asian',    open: 0,  close: 9  },
-    { name: 'London',   open: 8,  close: 17 },
-    { name: 'New York', open: 13, close: 22 }
+    { name:'Asian',    open:0,  close:9  },
+    { name:'London',   open:8,  close:17 },
+    { name:'New York', open:13, close:22 }
   ];
   function update() {
     const utcH = new Date().getUTCHours();
@@ -1485,7 +1261,7 @@ function _startSessionTimer() {
         const col  = open ? '#00d4a1' : '#5a6a8a';
         return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05)">
           <div style="font-size:13px;font-weight:700;color:#eef2ff">${s.name}</div>
-          <div style="font-size:11px;font-weight:700;color:${col}">${open ? '🟢 OPEN' : '⚫ CLOSED'}</div>
+          <div style="font-size:11px;font-weight:700;color:${col}">${open?'🟢 OPEN':'⚫ CLOSED'}</div>
           <div style="font-size:10px;color:#5a6a8a">${s.open}:00–${s.close}:00</div>
         </div>`;
       }).join('');
@@ -1494,19 +1270,9 @@ function _startSessionTimer() {
   setInterval(update, 60000);
 }
 
-/* ─── Psychology state init ─────────────────────────────────── */
-
-/* ── Psychology state init on S object ─────────────────────── */
-S.psychologyState = S.psychologyState || {
-  currentScreen: 'hub',
-  xp: 0,
-  streak: 1,
-  scores: { discipline: 0, emotion: 0, execution: 0 },
-  completedScenarios: [],
-  completedMissions: []
-};
-
-/* ─── Export/delete helpers (settings page) ────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   EXPORT / DELETE HELPERS
+   ═══════════════════════════════════════════════════════════════ */
 function exportCSV() {
   if (!S.trades?.length) { _toast('No trades to export.', 'warning'); return; }
   const header = 'Date,Pair,Direction,Entry,SL,TP,RR,Outcome,Session,Notes\n';
@@ -1514,25 +1280,27 @@ function exportCSV() {
     const d = t.createdAt?.toDate ? t.createdAt.toDate() : new Date();
     return [d.toLocaleDateString('en-GB'),t.pair||'',t.direction||'',t.entry||'',t.sl||'',t.tp||'',t.rr||'',t.outcome||'',t.session||'','"'+(t.notes||'').replace(/"/g,"'")+'"'].join(',');
   }).join('\n');
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([header+rows],{type:'text/csv'}));
-  a.download = 'tes_trades_'+new Date().toISOString().slice(0,10)+'.csv'; a.click();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([header+rows],{type:'text/csv'}));
+  a.download = 'tes_trades_'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();
   _toast('CSV exported ✓', 'success');
 }
-
 function exportJSON() {
   if (!S.trades?.length) { _toast('No trades to export.', 'warning'); return; }
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(S.trades,null,2)],{type:'application/json'}));
-  a.download = 'tes_trades_'+new Date().toISOString().slice(0,10)+'.json'; a.click();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(S.trades,null,2)],{type:'application/json'}));
+  a.download = 'tes_trades_'+new Date().toISOString().slice(0,10)+'.json';
+  a.click();
   _toast('JSON exported ✓', 'success');
 }
-
 function confirmDeleteAll() {
   if (!S.trades?.length) { _toast('No trades.', 'warning'); return; }
   if (!confirm('Delete ALL '+S.trades.length+' trades? Cannot be undone.')) return;
   Promise.all(S.trades.map(t => deleteTrade(t.id))).then(() => _toast('All trades deleted.','success'));
 }
 
-// Load Chart.js async
+// Chart.js async loader
 (function() {
   if (typeof Chart !== 'undefined') return;
   const s = document.createElement('script');
